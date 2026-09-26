@@ -3,7 +3,7 @@
 import asyncio
 import json
 import uuid
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -22,32 +22,36 @@ class MCPServerRouter:
         self._connection_to_client: Dict[str, str] = {}
         self._setup_routes()
 
-    def _infer_active_client(self) -> str:
-        try:
-            import time
-            from backend.storage.antigravity_sync import AntigravityChatSyncer
-            from backend.storage.copilot_sync import CopilotChatSyncer
-            ag_syncer = AntigravityChatSyncer(audit_store=self.gateway_proxy.audit_store)
-            cp_syncer = CopilotChatSyncer(audit_store=self.gateway_proxy.audit_store)
-            ag_file = ag_syncer.get_latest_transcript_file()
-            cp_file = cp_syncer.get_latest_chat_session_file()
-            ag_mtime = ag_file.stat().st_mtime if ag_file else 0
-            cp_mtime = cp_file.stat().st_mtime if cp_file else 0
-
-            if ag_mtime > cp_mtime and ag_mtime > (time.time() - 3600):
-                return "Google Antigravity IDE"
-            if cp_mtime > 0:
-                return "VS Code + GitHub Copilot"
-            if ag_mtime > 0:
-                return "Google Antigravity IDE"
-        except Exception:
-            pass
-        return "Google Antigravity IDE"
-
-    def _resolve_client(self, client_name: Optional[str], user_agent: str) -> str:
+    def _resolve_client(
+        self,
+        client_name: Optional[str] = None,
+        user_agent: str = "",
+        body: Optional[Dict[str, Any]] = None,
+    ) -> str:
         user_agent_lower = (user_agent or "").lower()
         if client_name and client_name != "AI Client":
-            return client_name
+            return "Hermes Agent" if "hermes" in client_name.lower() else client_name
+
+        # Check clientInfo in JSON-RPC payload if available
+        if body:
+            client_info = (body.get("params") or {}).get("clientInfo") or {}
+            c_name = client_info.get("name", "")
+            if c_name:
+                c_name_lower = c_name.lower()
+                if "hermes" in c_name_lower:
+                    return "Hermes Agent"
+                if "antigravity" in c_name_lower:
+                    return "Google Antigravity IDE"
+                if "claude" in c_name_lower:
+                    return "Claude Desktop"
+                if "cursor" in c_name_lower:
+                    return "Cursor"
+                if "copilot" in c_name_lower or "code" in c_name_lower:
+                    return "VS Code + GitHub Copilot"
+                return c_name.title()
+
+        if "hermes" in user_agent_lower:
+            return "Hermes Agent"
         if "antigravity" in user_agent_lower:
             return "Google Antigravity IDE"
         if "copilot" in user_agent_lower or "code" in user_agent_lower:
@@ -56,7 +60,12 @@ class MCPServerRouter:
             return "Claude Desktop"
         if "cursor" in user_agent_lower:
             return "Cursor"
-        return self._infer_active_client()
+
+        # Python MCP clients without explicit IDE headers are local agent runners like Hermes
+        if "python" in user_agent_lower or "httpx" in user_agent_lower or "aiohttp" in user_agent_lower:
+            return "Hermes Agent"
+
+        return "MCP Client"
 
     def _setup_routes(self) -> None:
         @self.router.get("/mcp")
@@ -123,8 +132,14 @@ class MCPServerRouter:
             except Exception:
                 raise HTTPException(status_code=400, detail="Invalid JSON body")
 
+            user_agent = request.headers.get("user-agent") or ""
+            client_info_name = (body.get("params") or {}).get("clientInfo", {}).get("name")
+            if client_info_name:
+                resolved_client = self._resolve_client(client_info_name, user_agent, body=body)
+                self._connection_to_client[sessionId] = resolved_client
+
             # Map the transport connection ID to the persistent logical AI session ID
-            resolved_client = self._connection_to_client.get(sessionId) or self._infer_active_client()
+            resolved_client = self._connection_to_client.get(sessionId) or self._resolve_client(None, user_agent, body=body)
 
             # For tool calls from Copilot or Antigravity, dynamically re-validate to bind to the latest active chat session
             if body.get("method") == "tools/call" and ("Copilot" in resolved_client or "Antigravity" in resolved_client):
@@ -167,13 +182,18 @@ class MCPServerRouter:
                 raise HTTPException(status_code=400, detail="Invalid JSON body")
 
             user_agent = request.headers.get("user-agent") or ""
-            resolved_client = self._resolve_client(client_name, user_agent)
+            resolved_client = self._resolve_client(client_name, user_agent, body=body)
 
-            if not sessionId or "Copilot" in resolved_client or "Antigravity" in resolved_client:
+            # Separate session for distinct client connections to prevent cross-merging
+            conn_key = request.headers.get("mcp-session-id") or sessionId or request.headers.get("x-session-id")
+            if conn_key and conn_key in self._connection_to_session:
+                target_session_id = self._connection_to_session[conn_key]
+            else:
                 logical_session = self.gateway_proxy.resolve_active_session_for_client(resolved_client)
                 target_session_id = logical_session.id
-            else:
-                target_session_id = sessionId
+                if conn_key:
+                    self._connection_to_session[conn_key] = target_session_id
+                    self._connection_to_client[conn_key] = resolved_client
 
             response = await self.gateway_proxy.handle_mcp_request(
                 request_dict=body,

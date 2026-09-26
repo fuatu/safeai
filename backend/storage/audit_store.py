@@ -74,19 +74,21 @@ class AuditStore:
                         continue
 
                     if s.title and ("bash (" in s.title or "read_file" in s.title):
-                        matching = list(session.exec(
-                            select(SessionRecord)
-                            .where((SessionRecord.id.startswith("copilot-")) | (SessionRecord.id.startswith("antigravity-")))
-                            .where(SessionRecord.id != s.id)
-                        ).all())
-                        if matching:
-                            closest = min(matching, key=lambda p: abs((p.started_at - s.started_at).total_seconds()) if p.started_at and s.started_at else 999999)
-                            acts = list(session.exec(select(ActionLog).where(ActionLog.session_id == s.id)).all())
-                            for a in acts:
-                                a.session_id = closest.id
-                                session.add(a)
-                            session.delete(s)
-                            continue
+                        prefix = "antigravity-" if "Antigravity" in (s.client_name or "") else ("copilot-" if "Copilot" in (s.client_name or "") else None)
+                        if prefix:
+                            matching = list(session.exec(
+                                select(SessionRecord)
+                                .where(SessionRecord.id.startswith(prefix))
+                                .where(SessionRecord.id != s.id)
+                            ).all())
+                            if matching:
+                                closest = min(matching, key=lambda p: abs((p.started_at - s.started_at).total_seconds()) if p.started_at and s.started_at else 999999)
+                                acts = list(session.exec(select(ActionLog).where(ActionLog.session_id == s.id)).all())
+                                for a in acts:
+                                    a.session_id = closest.id
+                                    session.add(a)
+                                session.delete(s)
+                                continue
 
                     s.total_actions = action_count
                     session.add(s)

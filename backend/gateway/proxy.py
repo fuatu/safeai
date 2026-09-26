@@ -153,7 +153,25 @@ class GatewayProxy:
             except Exception:
                 pass
 
-        # 2. General active session reuse window (last 45 minutes)
+        # 3. For Hermes Agent, maintain an isolated session
+        if "Hermes" in client_name:
+            recent_sessions = self.audit_store.list_sessions(limit=10)
+            for s in recent_sessions:
+                if "Hermes" in s.client_name and not s.ended_at:
+                    diff_seconds = (now - s.started_at).total_seconds()
+                    if diff_seconds < 3600:
+                        return s
+            new_id = f"hermes-{uuid.uuid4().hex[:12]}"
+            date_str = now.strftime("%b %d, %H:%M")
+            new_session = SessionRecord(
+                id=new_id,
+                client_name="Hermes Agent",
+                title=f"Hermes Agent ({date_str})",
+                started_at=now,
+            )
+            return self.audit_store.create_session(new_session)
+
+        # 4. General active session reuse window (last 45 minutes)
         recent_sessions = self.audit_store.list_sessions(limit=10)
         for s in recent_sessions:
             if s.client_name == client_name and not s.ended_at:

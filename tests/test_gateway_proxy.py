@@ -8,7 +8,7 @@ import pytest
 from backend.explainer.engine import ExplainerEngine
 from backend.gateway.proxy import GatewayProxy
 from backend.hitl.broker import HITLBroker
-from backend.models.schemas import SessionRecord
+from backend.models.schemas import SessionRecord, ToolSetting
 from backend.security.dlp import DLPMasker
 from backend.security.engine import SecurityEngine
 from backend.storage.audit_store import AuditStore
@@ -139,3 +139,94 @@ async def test_mcp_tool_call_dlp_masking(proxy_env):
     actions = store.list_actions("dlp-session")
     assert "AKIAIOSFODNN7EXAMPLE" not in actions[0].raw_payload
     assert "[REDACTED_AWS_KEY]" in actions[0].raw_payload
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_setting_disabled(proxy_env):
+    # Tool disabled by setting -> immediately denied
+    proxy, store, _ = proxy_env
+    store.add_or_update_tool_setting(
+        ToolSetting(tool_name="bash", is_enabled=False, description="Bash disabled")
+    )
+
+    req = {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "method": "tools/call",
+        "params": {"name": "bash", "arguments": {"command": "echo 'test'"}},
+    }
+    resp = await proxy.handle_mcp_request(req, session_id="disabled-sess")
+    assert "error" in resp
+    assert resp["error"]["code"] == -32000
+    assert "disabled" in resp["error"]["message"].lower()
+
+    actions = store.list_actions("disabled-sess")
+    assert len(actions) == 1
+    assert actions[0].status == "REJECTED"
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_setting_bypass_approval(proxy_env):
+    # Tool with bypass_approval and no secrets -> auto approved even if risky
+    proxy, store, _ = proxy_env
+    store.add_or_update_tool_setting(
+        ToolSetting(tool_name="bash", bypass_approval=True, description="Trusted tool")
+    )
+
+    req = {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "method": "tools/call",
+        "params": {"name": "bash", "arguments": {"command": "echo 'safe bypass'"}},
+    }
+    resp = await proxy.handle_mcp_request(req, session_id="bypass-sess")
+    assert "result" in resp
+    actions = store.list_actions("bypass-sess")
+    assert actions[0].status == "AUTO_APPROVED"
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_generic_wildcard_fallback(proxy_env):
+    # Custom tool without specific setting inherits generic '*' setting
+    proxy, store, _ = proxy_env
+    store.add_or_update_tool_setting(
+        ToolSetting(tool_name="*", is_enabled=False, description="Default deny all")
+    )
+
+    req = {
+        "jsonrpc": "2.0",
+        "id": 8,
+        "method": "tools/call",
+        "params": {"name": "custom_eval", "arguments": {"expr": "1+1"}},
+    }
+    resp = await proxy.handle_mcp_request(req, session_id="wildcard-sess")
+    assert "error" in resp
+    assert resp["error"]["code"] == -32000
+    assert "disabled" in resp["error"]["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_conversational_language_switching(proxy_env):
+    # Chat app sends conversational prompt in Turkish -> explainer switches to Turkish
+    proxy, store, _ = proxy_env
+    req = {
+        "jsonrpc": "2.0",
+        "id": 9,
+        "method": "tools/call",
+        "params": {
+            "name": "bash",
+            "arguments": {
+                "command": "pytest tests/",
+                "context": "Lütfen testleri çalıştır ve sonuçları göster",
+            },
+        },
+    }
+    resp = await proxy.handle_mcp_request(
+        req, session_id="tr-sess", active_language="auto"
+    )
+    assert "result" in resp
+    actions = store.list_actions("tr-sess")
+    assert len(actions) == 1
+    assert actions[0].language_code == "tr"
+    assert "test" in actions[0].plain_language_explanation.lower()
+

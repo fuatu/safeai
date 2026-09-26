@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from backend.explainer.engine import ExplainerEngine
 from backend.hitl.broker import DecisionStatus, HITLBroker
-from backend.models.schemas import ActionLog, SessionRecord
+from backend.models.schemas import ActionLog, SessionRecord, ToolSetting
 from backend.security.dlp import DLPMasker
 from backend.security.engine import SecurityAssessment, SecurityEngine
 from backend.storage.audit_store import AuditStore
@@ -63,6 +63,15 @@ class GatewayProxy:
         self.audit_store.create_session(new_sess)
         self.active_sessions[sid] = new_sess
         return new_sess
+
+    def resolve_tool_setting(self, tool_name: str) -> Optional[ToolSetting]:
+        """
+        Resolves MCP tool governance setting with fallback to generic wildcard '*'.
+        """
+        specific = self.audit_store.get_tool_setting(tool_name)
+        if specific:
+            return specific
+        return self.audit_store.get_tool_setting("*")
 
     async def handle_mcp_request(
         self,
@@ -182,10 +191,51 @@ class GatewayProxy:
         tool_name = params.get("name", "unknown")
         raw_arguments = params.get("arguments") or {}
 
+        # 0. Check Tool Setting & Governance (Req 8.1 - 8.5)
+        tool_setting = self.resolve_tool_setting(tool_name)
+        if tool_setting and not tool_setting.is_enabled:
+            action_id = f"act-{uuid.uuid4().hex[:12]}"
+            action_log = ActionLog(
+                id=action_id,
+                session_id=session.id,
+                tool_name=tool_name,
+                raw_payload=json.dumps(raw_arguments, ensure_ascii=False),
+                plain_language_explanation=f"Tool '{tool_name}' execution was denied because it is disabled in security governance settings.",
+                language_code="en",
+                risk_score=100,
+                risk_factors=json.dumps(["TOOL_DISABLED"]),
+                status="REJECTED",
+                user_decision_by="AUTO_POLICY",
+                decision_notes="Blocked by per-tool disable rule",
+            )
+            self.audit_store.log_action(action_log)
+            return {
+                "jsonrpc": "2.0",
+                "id": rpc_id,
+                "error": {
+                    "code": -32000,
+                    "message": f"Security Policy Denial: Tool '{tool_name}' is disabled by administrative governance policy",
+                    "data": {"actionId": action_id, "toolName": tool_name},
+                },
+            }
+
+        # Extract textual context from arguments and parameters for conversational language auto-detection
+        context_parts = []
+        for val in raw_arguments.values():
+            if isinstance(val, str):
+                context_parts.append(val)
+            elif isinstance(val, (dict, list)):
+                context_parts.append(json.dumps(val, ensure_ascii=False))
+        context_text = " ".join(context_parts)
+
         action_id = f"act-{uuid.uuid4().hex[:12]}"
-        lang = self.explainer_engine.resolve_active_language(active_language or self.default_language)
+        lang = self.explainer_engine.resolve_active_language(
+            active_language or self.default_language,
+            context_text=context_text,
+        )
 
         # 1. DLP Mask secrets in arguments before security assessment & persistence (Req 6.2)
+        has_secrets = self.dlp_masker.contains_secrets(raw_arguments)
         sanitized_arguments = self.dlp_masker.redact_payload(raw_arguments)
         sanitized_json = json.dumps(sanitized_arguments, ensure_ascii=False)
 
@@ -198,6 +248,20 @@ class GatewayProxy:
             payload=sanitized_arguments,
             assessment=assessment,
             active_language=lang,
+            context_text=context_text,
+        )
+
+        # Determine effective threshold & bypass
+        bypass_active = (
+            tool_setting is not None
+            and tool_setting.bypass_approval
+            and not has_secrets
+        )
+        custom_threshold = 101 if bypass_active else (
+            tool_setting.custom_threshold if tool_setting and tool_setting.custom_threshold is not None else None
+        )
+        effective_threshold = (
+            custom_threshold if custom_threshold is not None else self.hitl_broker.approval_threshold
         )
 
         # Initial log creation as PENDING / processing
@@ -211,7 +275,7 @@ class GatewayProxy:
             risk_score=assessment.risk_score,
             risk_factors=json.dumps(assessment.risk_factors),
             status="PENDING",
-            user_decision_by="AUTO_POLICY" if assessment.risk_score < self.hitl_broker.approval_threshold else None,
+            user_decision_by="AUTO_POLICY" if assessment.risk_score < effective_threshold else None,
         )
         self.audit_store.log_action(action_log)
 
@@ -224,6 +288,7 @@ class GatewayProxy:
             assessment=assessment,
             plain_explanation=explanation,
             active_language=lang,
+            custom_threshold=custom_threshold,
         )
 
         action_log.status = decision.value
@@ -260,13 +325,21 @@ class GatewayProxy:
                 },
             }
 
-        # 5. Forward to downstream or execute locally (Req 1.3, 1.4, 4.3)
+        # 5. Forward to downstream or execute locally (Req 1.3, 1.4, 4.3, 8.4)
+        target_downstream_url = (
+            tool_setting.downstream_url if (tool_setting and tool_setting.downstream_url) else self.downstream_url
+        )
+        target_timeout_ms = (
+            tool_setting.timeout_ms if (tool_setting and tool_setting.timeout_ms is not None) else 15000
+        )
+
         start_exec = time.perf_counter()
         try:
             execution_result = await self.dispatch_execution(
                 tool_name=tool_name,
                 arguments=sanitized_arguments,
-                timeout_ms=15000,
+                downstream_url=target_downstream_url,
+                timeout_ms=target_timeout_ms,
             )
             exec_duration_ms = int((time.perf_counter() - start_exec) * 1000)
 
@@ -288,11 +361,11 @@ class GatewayProxy:
             }
 
         except asyncio.TimeoutError:
-            # Req 1.4: Downstream timeout >= 15000ms -> standard JSON-RPC error
+            # Req 1.4: Downstream timeout >= target_timeout_ms -> standard JSON-RPC error
             exec_duration_ms = int((time.perf_counter() - start_exec) * 1000)
             action_log.execution_duration_ms = exec_duration_ms
             action_log.status = "TIMED_OUT"
-            action_log.execution_result = "Downstream tool timeout (exceeded 15000ms)"
+            action_log.execution_result = f"Downstream tool timeout (exceeded {target_timeout_ms}ms)"
             self.audit_store.update_action(action_log)
 
             return {
@@ -300,7 +373,7 @@ class GatewayProxy:
                 "id": rpc_id,
                 "error": {
                     "code": -32603,
-                    "message": "Downstream tool timeout: failed to respond within 15000ms",
+                    "message": f"Downstream tool timeout: failed to respond within {target_timeout_ms}ms",
                 },
             }
         except Exception as ex:
@@ -319,19 +392,24 @@ class GatewayProxy:
             }
 
     async def dispatch_execution(
-        self, tool_name: str, arguments: Dict[str, Any], timeout_ms: int = 15000
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        downstream_url: Optional[str] = None,
+        timeout_ms: int = 15000,
     ) -> Dict[str, Any]:
         """
         Dispatches tool call to downstream MCP HTTP server if configured,
         or handles standard safe execution locally.
         """
         timeout_sec = timeout_ms / 1000.0
+        target_url = downstream_url or self.downstream_url
 
         # If downstream server configured, forward request
-        if self.downstream_url:
+        if target_url:
             async with httpx.AsyncClient(timeout=timeout_sec) as client:
                 resp = await client.post(
-                    self.downstream_url,
+                    target_url,
                     json={
                         "jsonrpc": "2.0",
                         "id": str(uuid.uuid4()),

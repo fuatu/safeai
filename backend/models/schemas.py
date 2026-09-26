@@ -1,5 +1,4 @@
-"""SQLModel schemas for SafeAI Core."""
-
+import uuid
 from datetime import datetime, timezone
 from typing import Optional, List, Any, Dict
 from sqlmodel import SQLModel, Field
@@ -54,12 +53,27 @@ class PolicyRule(SQLModel, table=True):
     is_active: bool = Field(default=True)
 
 
+class ToolSetting(SQLModel, table=True):
+    """Per-tool or generic fallback ('*') MCP governance configuration."""
+    __tablename__ = "tool_settings"
+
+    id: str = Field(default_factory=lambda: f"tool-{uuid.uuid4().hex[:8]}", primary_key=True)
+    tool_name: str = Field(index=True, unique=True)# Specific tool name or '*' for Generic_Tool
+    custom_threshold: Optional[int] = None         # 0 - 100 override (None = inherit global)
+    downstream_url: Optional[str] = None           # Custom downstream MCP endpoint URL
+    bypass_approval: bool = Field(default=False)   # Auto-approve if zero secrets detected
+    timeout_ms: int = Field(default=15000)         # Downstream execution timeout
+    is_enabled: bool = Field(default=True)         # Enable/disable tool
+    description: Optional[str] = None
+
+
 class SystemConfig(BaseModel):
     """System-wide configuration settings with hot-reload support."""
     model_config = ConfigDict(from_attributes=True)
 
     approval_threshold: int = 50                   # Hold when risk_score >= threshold
-    active_language: str = "en"                    # 'en', 'tr', 'es', 'de', 'fr', 'auto'
+    active_language: str = "auto"                  # 'auto', 'en', 'tr', 'es', 'de', 'fr'
     explainer_mode: str = "plain"                  # "plain", "technical", "off"
     dlp_enabled: bool = True
-    approval_timeout_seconds: int = 90             # Default timeout before auto-rejection
+    approval_timeout_seconds: int = 90             # 0 = infinite (no timeout)
+

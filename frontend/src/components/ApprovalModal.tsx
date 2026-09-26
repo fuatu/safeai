@@ -15,7 +15,8 @@ export const ApprovalModal: React.FC<ApprovalModalProps> = ({
   onApprove,
   onDeny,
 }) => {
-  const [secondsRemaining, setSecondsRemaining] = useState<number>(approval.timeoutSeconds || 90);
+  const isInfinite = !approval.timeoutSeconds || approval.timeoutSeconds <= 0;
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(isInfinite ? 0 : approval.timeoutSeconds || 90);
   const [notes, setNotes] = useState<string>('');
   const [localMode, setLocalMode] = useState<ExplainerMode>(explainerMode);
 
@@ -26,6 +27,7 @@ export const ApprovalModal: React.FC<ApprovalModalProps> = ({
 
   // Countdown timer
   useEffect(() => {
+    if (isInfinite) return;
     const elapsed = Math.floor(Date.now() / 1000 - approval.receivedAt);
     const initialRemaining = Math.max(0, (approval.timeoutSeconds || 90) - elapsed);
     setSecondsRemaining(initialRemaining);
@@ -41,7 +43,7 @@ export const ApprovalModal: React.FC<ApprovalModalProps> = ({
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [approval]);
+  }, [approval, isInfinite]);
 
   const getRiskBadgeColor = (score: number) => {
     if (score >= 80) return 'bg-red-500/20 text-red-400 border-red-500/50';
@@ -99,7 +101,7 @@ export const ApprovalModal: React.FC<ApprovalModalProps> = ({
           {/* Countdown Clock */}
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0a0d14] border border-[#1f293d] text-xs font-mono text-amber-400">
             <Clock className="w-4 h-4" />
-            <span>{secondsRemaining}s</span>
+            <span>{isInfinite ? '∞ Infinite' : `${secondsRemaining}s`}</span>
           </div>
         </div>
 

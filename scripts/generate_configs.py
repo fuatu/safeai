@@ -7,52 +7,20 @@ to connect seamlessly through SafeAI's transparent governance gateway.
 
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Dict, Any
 
+# Ensure project root is in sys.path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-def get_claude_desktop_config(port: int = 8080) -> Dict[str, Any]:
-    """Generates configuration for Anthropic Claude Desktop."""
-    return {
-        "mcpServers": {
-          "safeai": {
-            "command": "npx",
-            "args": ["-y", "mcp-remote", f"http://localhost:{port}/mcp"]
-          }
-        }
-    }
-
-
-def get_antigravity_config(port: int = 8080) -> Dict[str, Any]:
-    """Generates configuration for Google Antigravity IDE (mcp_config.json)."""
-    return {
-        "mcpServers": {
-            "safeai": {
-                "type": "sse",
-                "url": f"http://localhost:{port}/mcp",
-                "description": "SafeAI Local Governance Gateway & Plain-Language Explainer"
-            }
-        }
-    }
-
-
-def get_cursor_config(port: int = 8080) -> Dict[str, Any]:
-    """Generates configuration for Cursor IDE (MCP & OpenAI Proxy)."""
-    return {
-        "mcp": {
-            "servers": [
-                {
-                    "name": "safeai",
-                    "type": "sse",
-                    "url": f"http://localhost:{port}/mcp"
-                }
-            ]
-        },
-        "openai_proxy": {
-            "base_url": f"http://localhost:{port}/v1",
-            "api_key": "safeai-local-key"
-        }
-    }
+from backend.gateway.client_configs import (
+    get_claude_desktop_config,
+    get_copilot_config,
+    get_antigravity_config,
+    get_cursor_config,
+    get_all_client_configs,
+)
 
 
 def export_client_configs(output_dir: str = "./client_configs", port: int = 8080) -> None:
@@ -65,18 +33,24 @@ def export_client_configs(output_dir: str = "./client_configs", port: int = 8080
     with open(claude_file, "w", encoding="utf-8") as f:
         json.dump(get_claude_desktop_config(port), f, indent=2)
 
-    # 2. Antigravity IDE
+    # 2. GitHub Copilot
+    copilot_file = out_path / "copilot_mcp_config.json"
+    with open(copilot_file, "w", encoding="utf-8") as f:
+        json.dump(get_copilot_config(port), f, indent=2)
+
+    # 3. Antigravity IDE
     antigravity_file = out_path / "antigravity_mcp_config.json"
     with open(antigravity_file, "w", encoding="utf-8") as f:
         json.dump(get_antigravity_config(port), f, indent=2)
 
-    # 3. Cursor IDE
+    # 4. Cursor IDE
     cursor_file = out_path / "cursor_config.json"
     with open(cursor_file, "w", encoding="utf-8") as f:
         json.dump(get_cursor_config(port), f, indent=2)
 
     print(f"Generated AI client configurations in: {out_path.resolve()}")
     print(f" - Claude Desktop: {claude_file.name}")
+    print(f" - GitHub Copilot: {copilot_file.name}")
     print(f" - Antigravity:    {antigravity_file.name}")
     print(f" - Cursor:         {cursor_file.name}")
 

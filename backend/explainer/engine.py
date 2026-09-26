@@ -3,7 +3,7 @@
 import locale
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from backend.security.engine import SecurityAssessment
 
@@ -123,17 +123,90 @@ class ExplainerEngine:
         },
     }
 
-    def resolve_active_language(self, user_preference: Optional[str]) -> str:
+    # Unique character markers (characters exclusive to this language among supported set)
+    UNIQUE_CHAR_MARKERS: Dict[str, Set[str]] = {
+        "tr": set("çğışÇĞIŞ"),
+        "de": set("äßÄẞ"),
+        "es": set("ñÑ¿¡"),
+        "fr": set("êàùâîôëïÊÀÙÂÎÔËÏ"),
+    }
+    # Shared accent markers
+    SHARED_CHAR_MARKERS: Dict[str, Set[str]] = {
+        "tr": set("öüÖÜİ"),
+        "de": set("öüÖÜ"),
+        "es": set("áéíóúÁÉÍÓÚ"),
+        "fr": set("éèÉÈçÇ"),
+    }
+
+    # Distinctive stopword dictionaries
+    VOCAB_MARKERS: Dict[str, Set[str]] = {
+        "tr": {"bir", "ve", "için", "bu", "ile", "dosya", "sil", "yap", "çalıştır", "güncelle", "lütfen", "kod", "hata", "klasör", "komut", "bunu", "göster", "proje", "listele", "kontrol"},
+        "de": {"der", "die", "das", "und", "für", "mit", "ist", "nicht", "bitte", "datei", "löschen", "ausführen", "kannst", "machen", "alles", "projekt", "überprüfe", "zeige", "führen", "führe"},
+        "es": {"el", "la", "los", "las", "para", "con", "por", "archivo", "eliminar", "ejecutar", "favor", "puedes", "hacer", "proyecto", "pruebas", "muestra"},
+        "fr": {"le", "la", "les", "pour", "avec", "dans", "fichier", "supprimer", "exécuter", "peux", "faire", "projet", "affiche"},
+        "en": {"the", "and", "for", "with", "this", "file", "delete", "remove", "directory", "please", "can", "you", "make", "show", "check", "run"},
+    }
+
+    def detect_language_from_context(self, context_text: Optional[str]) -> Optional[str]:
+        """
+        Analyzes conversational tokens and text to heuristically detect active language
+        (Turkish, German, Spanish, French, English).
+        Returns None if not confident.
+        """
+        if not context_text or len(context_text.strip()) < 3:
+            return None
+
+        clean_text = context_text.lower()
+        tokens = set(re.findall(r"\b[a-zA-Zçğıöşüäöüßñáéíóúèêàùâîôëï]+\b", clean_text))
+
+        # Combined scoring:
+        # - Exclusive unique character: 3 points
+        # - Vocabulary stopword match: 3 points
+        # - Shared character match: 1 point
+        scores: Dict[str, int] = {lang: 0 for lang in ["tr", "de", "es", "fr", "en"]}
+
+        for lang, words in self.VOCAB_MARKERS.items():
+            matches = tokens & words
+            scores[lang] += len(matches) * 3
+
+        for lang, char_set in self.UNIQUE_CHAR_MARKERS.items():
+            for ch in context_text:
+                if ch in char_set:
+                    scores[lang] += 3
+
+        for lang, char_set in self.SHARED_CHAR_MARKERS.items():
+            for ch in context_text:
+                if ch in char_set:
+                    scores[lang] += 1
+
+        best_lang, best_score = max(scores.items(), key=lambda x: x[1])
+        if best_score >= 3:
+            return best_lang
+
+        return None
+
+    def resolve_active_language(
+        self,
+        user_preference: Optional[str],
+        context_text: Optional[str] = None,
+    ) -> str:
         """
         Resolves active language preference.
-        Falls back to system locale or 'en' if unspecified or invalid.
+        If user_preference is 'auto', dynamically detects language from conversation context.
+        Falls back to system locale or initial default ('en') if not confident.
         """
         if user_preference and user_preference != "auto":
             clean = user_preference.strip().lower()[:2]
             if clean in self.SUPPORTED_LANGUAGES:
                 return clean
 
-        # Attempt system locale detection
+        # If 'auto' or unspecified, check conversation context first
+        if context_text:
+            detected = self.detect_language_from_context(context_text)
+            if detected in self.SUPPORTED_LANGUAGES:
+                return detected
+
+        # Fallback to system locale detection
         try:
             sys_loc = locale.getlocale()[0] or os.environ.get("LANG", "")
             if sys_loc:
@@ -159,12 +232,15 @@ class ExplainerEngine:
         payload: Dict[str, Any],
         assessment: SecurityAssessment,
         active_language: Optional[str] = None,
+        context_text: Optional[str] = None,
     ) -> str:
         """
         Generates a 1-2 sentence plain-language summary of consequences
         in the specified or auto-resolved active language.
         """
-        lang = self.resolve_active_language(active_language)
+        # Combine context_text and payload strings for auto-detection
+        full_context = f"{context_text or ''} {str(payload)}"
+        lang = self.resolve_active_language(active_language, context_text=full_context)
 
         base_summary = self._describe_action(tool_name, payload, lang)
 

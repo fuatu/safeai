@@ -56,3 +56,30 @@ export interface PolicyRule {
   description: string | null;
   is_active: boolean;
 }
+
+export interface ToolSetting {
+  id?: number;
+  tool_name: string;
+  custom_threshold: number | null;
+  downstream_url: string | null;
+  bypass_approval: boolean;
+  timeout_ms: number;
+  is_enabled: boolean;
+  description: string | null;
+}
+
+export interface ClientConfigItem {
+  id: string;
+  name: string;
+  filename: string;
+  description: string;
+  target_paths?: Record<string, string>;
+  config: Record<string, any>;
+  command_hint?: string;
+  mcp_url?: string;
+  openai_url?: string;
+}
+
+export type ClientConfigsMap = Record<string, ClientConfigItem>;
+
+

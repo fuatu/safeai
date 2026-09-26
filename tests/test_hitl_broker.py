@@ -116,3 +116,31 @@ async def test_hitl_timeout_auto_rejection():
     assert elapsed >= 0.1
     assert broker.get_hold_status("act-timeout") == DecisionStatus.TIMED_OUT
     assert len(broker.get_pending_approvals()) == 0
+
+
+@pytest.mark.asyncio
+async def test_hitl_infinite_timeout():
+    # Req 4.5: timeout_seconds=0 indicates infinite wait until manual decision
+    broker = HITLBroker(approval_threshold=50, timeout_seconds=0)
+    assessment = SecurityAssessment(risk_score=90, risk_factors=["high"])
+
+    async def approve_after_while():
+        await asyncio.sleep(0.1)
+        await broker.submit_decision("act-infinite", "APPROVE")
+
+    hold_task = asyncio.create_task(
+        broker.intercept_and_hold(
+            action_id="act-infinite",
+            session_id="sess-inf",
+            tool_name="bash",
+            payload={"command": "terraform destroy"},
+            assessment=assessment,
+            plain_explanation="Destroys cloud infrastructure.",
+            timeout_seconds=0,
+        )
+    )
+    approve_task = asyncio.create_task(approve_after_while())
+    status, _ = await asyncio.gather(hold_task, approve_task)
+
+    assert status == DecisionStatus.APPROVED
+

@@ -44,8 +44,8 @@ class HITLBroker:
         self.approval_threshold = max(0, min(100, threshold))
 
     def set_timeout(self, seconds: int) -> None:
-        """Dynamically updates timeout seconds for hot-reloading."""
-        self.timeout_seconds = max(1, seconds)
+        """Dynamically updates timeout seconds for hot-reloading (0 indicates infinite wait)."""
+        self.timeout_seconds = max(0, seconds)
 
     def set_ws_notifier(
         self, notifier: Callable[[Dict[str, Any]], Coroutine[Any, Any, None]]
@@ -63,13 +63,18 @@ class HITLBroker:
         plain_explanation: str,
         active_language: str = "en",
         timeout_seconds: Optional[int] = None,
+        custom_threshold: Optional[int] = None,
     ) -> DecisionStatus:
         """
         Determines whether to auto-approve or suspend connection.
         If score >= threshold, blocks asynchronously until user decides or timeout expires.
+        If timeout_seconds is 0 or None (when self.timeout_seconds is 0), holds indefinitely.
         """
-        # Req 4.1: If score < threshold, auto-approve immediately
-        if assessment.risk_score < self.approval_threshold:
+        effective_threshold = (
+            custom_threshold if custom_threshold is not None else self.approval_threshold
+        )
+        # Req 4.1: If score < effective_threshold, auto-approve immediately
+        if assessment.risk_score < effective_threshold:
             self._decisions[action_id] = DecisionStatus.AUTO_APPROVED
             return DecisionStatus.AUTO_APPROVED
 
@@ -106,7 +111,11 @@ class HITLBroker:
 
         # Suspend connection until decision is submitted or timeout fires
         try:
-            await asyncio.wait_for(event.wait(), timeout=float(effective_timeout))
+            if effective_timeout is not None and effective_timeout > 0:
+                await asyncio.wait_for(event.wait(), timeout=float(effective_timeout))
+            else:
+                # 0 or None indicates infinite hold until manual decision
+                await event.wait()
             final_status = self._decisions.get(action_id, DecisionStatus.REJECTED)
             return final_status
         except asyncio.TimeoutError:

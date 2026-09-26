@@ -9,7 +9,7 @@ from typing import List, Optional, Dict, Any
 
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from backend.models.schemas import ActionLog, PolicyRule, SessionRecord
+from backend.models.schemas import ActionLog, PolicyRule, SessionRecord, ToolSetting
 
 
 class AuditStore:
@@ -182,6 +182,61 @@ class AuditStore:
             if not rule:
                 return False
             session.delete(rule)
+            session.commit()
+            return True
+
+    # ---------------------------------------------------------
+    # ToolSetting Operations (Per-Tool & Generic Governance)
+    # ---------------------------------------------------------
+
+    def get_tool_settings(self) -> List[ToolSetting]:
+        """Lists all per-tool and generic tool settings."""
+        with self.get_session() as session:
+            statement = select(ToolSetting).order_by(ToolSetting.tool_name.asc())
+            return list(session.exec(statement).all())
+
+    def get_tool_setting(self, tool_name: str) -> Optional[ToolSetting]:
+        """Retrieves a setting entry by tool name."""
+        with self.get_session() as session:
+            statement = select(ToolSetting).where(ToolSetting.tool_name == tool_name)
+            return session.exec(statement).first()
+
+    def add_or_update_tool_setting(self, setting: ToolSetting) -> ToolSetting:
+        """Upserts a per-tool or generic tool setting."""
+        with self.get_session() as session:
+            existing = session.exec(
+                select(ToolSetting).where(ToolSetting.tool_name == setting.tool_name)
+            ).first()
+            if existing:
+                existing.custom_threshold = setting.custom_threshold
+                existing.downstream_url = setting.downstream_url
+                existing.bypass_approval = setting.bypass_approval
+                existing.timeout_ms = setting.timeout_ms
+                existing.is_enabled = setting.is_enabled
+                existing.description = setting.description
+                session.add(existing)
+                session.commit()
+                session.refresh(existing)
+                return existing
+            else:
+                if not getattr(setting, "id", None):
+                    setting.id = f"tool-{uuid.uuid4().hex[:8]}"
+                session.add(setting)
+                session.commit()
+                session.refresh(setting)
+                return setting
+
+    def delete_tool_setting(self, setting_id: str) -> bool:
+        """Deletes a tool setting by ID or tool name."""
+        with self.get_session() as session:
+            setting = session.get(ToolSetting, setting_id)
+            if not setting:
+                setting = session.exec(
+                    select(ToolSetting).where(ToolSetting.tool_name == setting_id)
+                ).first()
+            if not setting:
+                return False
+            session.delete(setting)
             session.commit()
             return True
 

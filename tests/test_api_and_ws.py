@@ -115,3 +115,55 @@ async def test_approvals_api_workflow(app_instance):
         mcp_res, _ = await asyncio.gather(mcp_task, decide_task)
         assert mcp_res.status_code == 200
         assert "result" in mcp_res.json()
+
+
+@pytest.mark.asyncio
+async def test_tool_settings_api_crud(app_instance):
+    async with AsyncClient(transport=ASGITransport(app=app_instance), base_url="http://test") as client:
+        # Upsert tool setting
+        setting = {
+            "tool_name": "git_push",
+            "custom_threshold": 40,
+            "bypass_approval": False,
+            "timeout_ms": 20000,
+            "is_enabled": True,
+            "description": "Git push tool",
+        }
+        post_res = await client.post("/api/tools/settings", json=setting)
+        assert post_res.status_code == 200
+        assert post_res.json()["tool_name"] == "git_push"
+
+        # List tool settings
+        list_res = await client.get("/api/tools/settings")
+        assert list_res.status_code == 200
+        settings = list_res.json()
+        assert any(s["tool_name"] == "git_push" for s in settings)
+
+        # Get specific tool setting
+        get_res = await client.get("/api/tools/settings/git_push")
+        assert get_res.status_code == 200
+        assert get_res.json()["custom_threshold"] == 40
+
+        # Delete tool setting
+        del_res = await client.delete("/api/tools/settings/git_push")
+        assert del_res.status_code == 200
+        assert del_res.json()["status"] == "deleted"
+
+
+@pytest.mark.asyncio
+async def test_client_configs_api(app_instance):
+    async with AsyncClient(transport=ASGITransport(app=app_instance), base_url="http://test") as client:
+        res = await client.get("/api/client-configs?port=8080")
+        assert res.status_code == 200
+        data = res.json()
+        assert "claude" in data
+        assert "copilot" in data
+        assert "antigravity" in data
+        assert "cursor" in data
+        assert "generic" in data
+        assert data["claude"]["filename"] == "claude_desktop_config.json"
+        assert data["copilot"]["filename"] == "mcp.json"
+        assert "safeai" in data["claude"]["config"]["mcpServers"]
+        assert "safeai" in data["copilot"]["config"]["mcpServers"]
+
+

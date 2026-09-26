@@ -4,8 +4,9 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from backend.gateway.client_configs import get_all_client_configs
 from backend.hitl.broker import HITLBroker
-from backend.models.schemas import ActionLog, PolicyRule, SessionRecord, SystemConfig
+from backend.models.schemas import ActionLog, PolicyRule, SessionRecord, SystemConfig, ToolSetting
 from backend.security.engine import SecurityEngine
 from backend.storage.audit_store import AuditStore
 
@@ -136,5 +137,43 @@ def create_api_router(
             raise HTTPException(status_code=404, detail="Rule not found")
         security_engine.set_policy_rules(audit_store.get_policy_rules(active_only=True))
         return {"status": "deleted", "ruleId": rule_id}
+
+    # -------------------------------------------------------------
+    # Tool Settings & Governance (Req 8.1 - 8.5)
+    # -------------------------------------------------------------
+
+    @router.get("/tools/settings")
+    def list_tool_settings() -> List[ToolSetting]:
+        return audit_store.get_tool_settings()
+
+    @router.get("/tools/settings/{tool_name}")
+    def get_tool_setting(tool_name: str) -> ToolSetting:
+        setting = audit_store.get_tool_setting(tool_name)
+        if not setting:
+            raise HTTPException(status_code=404, detail="Tool setting not found")
+        return setting
+
+    @router.post("/tools/settings")
+    def upsert_tool_setting(setting: ToolSetting) -> ToolSetting:
+        return audit_store.add_or_update_tool_setting(setting)
+
+    @router.delete("/tools/settings/{tool_name}")
+    def delete_tool_setting(tool_name: str):
+        success = audit_store.delete_tool_setting(tool_name)
+        if not success:
+            raise HTTPException(status_code=404, detail="Tool setting not found")
+        return {"status": "deleted", "toolName": tool_name}
+
+    # -------------------------------------------------------------
+    # AI Client Connection Configurations (Req 1.1, 7.3)
+    # -------------------------------------------------------------
+
+    @router.get("/client-configs")
+    def get_client_configs(
+        port: int = Query(8080, ge=1, le=65535),
+        host: str = Query("localhost"),
+    ) -> Dict[str, Any]:
+        """Returns ready-to-use AI client configuration snippets and guides."""
+        return get_all_client_configs(port=port, host=host)
 
     return router

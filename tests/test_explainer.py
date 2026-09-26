@@ -71,3 +71,47 @@ def test_explainer_fallback_on_unsupported_language(explainer):
     payload = {"command": "cargo build"}
     summary = explainer.generate_explanation("bash", payload, assessment, active_language="xyz")
     assert "Compiles or builds project assets." in summary
+
+
+def test_explainer_conversational_auto_detect_turkish(explainer):
+    # Context contains Turkish chat / prompt
+    context = "Lütfen proje dosyalarını listele ve kontrol et"
+    lang = explainer.resolve_active_language("auto", context_text=context)
+    assert lang == "tr"
+
+    assessment = SecurityAssessment(risk_score=10, risk_factors=[])
+    payload = {"command": "ls -la"}
+    summary = explainer.generate_explanation(
+        "bash", payload, assessment, active_language="auto", context_text=context
+    )
+    assert "dosya ve klasörleri" in summary
+
+
+def test_explainer_conversational_auto_detect_german(explainer):
+    # Context contains German chat / prompt
+    context = "Bitte führe die Tests für das Projekt aus und überprüfe alles"
+    lang = explainer.resolve_active_language("auto", context_text=context)
+    assert lang == "de"
+
+    assessment = SecurityAssessment(risk_score=10, risk_factors=[])
+    payload = {"command": "pytest"}
+    summary = explainer.generate_explanation(
+        "bash", payload, assessment, active_language="auto", context_text=context
+    )
+    assert "Führt automatisierte Testsuiten aus." in summary
+
+
+def test_explainer_conversational_auto_detect_spanish(explainer):
+    # Context contains Spanish chat / prompt
+    context = "¿Por favor ejecuta las pruebas unitarias y crea un commit?"
+    lang = explainer.resolve_active_language("auto", context_text=context)
+    assert lang == "es"
+
+
+def test_explainer_conversational_fallback_when_ambiguous(explainer):
+    # Ambiguous or purely technical code without stop words / markers
+    context = "ls -la /tmp"
+    lang = explainer.resolve_active_language("auto", context_text=context)
+    # Should fall back to host locale or 'en'
+    assert lang in ["en", "tr", "de", "es", "fr"]
+

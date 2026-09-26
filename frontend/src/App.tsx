@@ -7,18 +7,20 @@ import {
   Radio,
   RefreshCw,
   Terminal,
+  Cpu,
 } from 'lucide-react';
 import { useSafeAIWebSocket } from './hooks/useSafeAIWebSocket';
 import { ApprovalModal } from './components/ApprovalModal';
 import { SessionTimeline } from './components/SessionTimeline';
 import { SessionSummary } from './components/SessionSummary';
 import { SettingsPanel } from './components/SettingsPanel';
+import { ClientConfigPanel } from './components/ClientConfigPanel';
 import { ActionLog, SafeAISettings, SessionRecord } from './types';
 
 export const App: React.FC = () => {
   const { isConnected, pendingApprovals, submitDecision } = useSafeAIWebSocket();
 
-  const [activeTab, setActiveTab] = useState<'timeline' | 'settings'>('timeline');
+  const [activeTab, setActiveTab] = useState<'timeline' | 'settings' | 'clients'>('timeline');
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [actions, setActions] = useState<ActionLog[]>([]);
@@ -176,6 +178,17 @@ export const App: React.FC = () => {
             >
               <Sliders className="w-4 h-4" /> Policy Settings
             </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('clients')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === 'clients'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-[#121824]'
+              }`}
+            >
+              <Cpu className="w-4 h-4" /> AI Client Connect
+            </button>
           </div>
         </div>
       </header>
@@ -261,7 +274,16 @@ export const App: React.FC = () => {
 
         {/* Tab 2: Policy Settings */}
         {activeTab === 'settings' && (
-          <SettingsPanel settings={settings} onUpdateSettings={handleUpdateSettings} />
+          <SettingsPanel
+            settings={settings}
+            onUpdateSettings={handleUpdateSettings}
+            onNavigateToClients={() => setActiveTab('clients')}
+          />
+        )}
+
+        {/* Tab 3: AI Client Connect Guides */}
+        {activeTab === 'clients' && (
+          <ClientConfigPanel />
         )}
       </main>
 

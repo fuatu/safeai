@@ -88,10 +88,16 @@ class DLPMasker:
                 entropy += -p_x * math.log2(p_x)
         return entropy
 
-    def contains_secrets(self, text: str) -> bool:
-        """Checks if text contains known secret patterns."""
+    def contains_secrets(self, text: Any) -> bool:
+        """Checks if text or payload contains known secret patterns."""
         if not text:
             return False
+        if isinstance(text, dict):
+            return any(self.contains_secrets(v) for v in text.values())
+        if isinstance(text, (list, tuple, set)):
+            return any(self.contains_secrets(x) for x in text)
+        if not isinstance(text, str):
+            text = str(text)
         for _, pattern, _ in self.PATTERNS:
             if pattern.search(text):
                 return True

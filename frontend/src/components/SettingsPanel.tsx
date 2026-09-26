@@ -1,19 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { Sliders, Shield, Globe, Clock, Plus, Trash2, CheckCircle2, Lock, Wrench, Server, Check, X, Cpu } from 'lucide-react';
+import { Sliders, Shield, Globe, Clock, Plus, Trash2, CheckCircle2, Lock, Wrench, Server, Check, X, Cpu, Database, AlertTriangle, AlertCircle, RotateCcw } from 'lucide-react';
 import { PolicyRule, SafeAISettings, ToolSetting } from '../types';
 
 interface SettingsPanelProps {
   settings: SafeAISettings;
   onUpdateSettings: (newSettings: Partial<SafeAISettings>) => Promise<void>;
   onNavigateToClients?: () => void;
+  onDatabaseCleaned?: () => void;
 }
 
-export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onUpdateSettings, onNavigateToClients }) => {
+export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onUpdateSettings, onNavigateToClients, onDatabaseCleaned }) => {
   const [formData, setFormData] = useState<SafeAISettings>(settings);
   const [rules, setRules] = useState<PolicyRule[]>([]);
   const [newRulePattern, setNewRulePattern] = useState('');
   const [newRuleType, setNewRuleType] = useState<PolicyRule['rule_type']>('DENY_COMMAND');
   const [isSaved, setIsSaved] = useState(false);
+
+  // Database Clean state
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [keepPolicies, setKeepPolicies] = useState(true);
+  const [isCleaning, setIsCleaning] = useState(false);
+  const [cleanMessage, setCleanMessage] = useState<string | null>(null);
+  const [cleanError, setCleanError] = useState<string | null>(null);
 
   // Tool settings state
   const [toolSettings, setToolSettings] = useState<ToolSetting[]>([]);
@@ -148,6 +156,43 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onUpdate
         fetchToolSettings();
       }
     } catch {}
+  };
+
+  const handleCleanDatabase = async () => {
+    setIsCleaning(true);
+    setCleanError(null);
+    try {
+      const res = await fetch('/api/database/clean', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          keep_policy_rules: keepPolicies,
+          keep_tool_settings: keepPolicies,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCleanMessage(
+          `Successfully cleaned database: wiped ${data.actions_deleted || 0} action logs and ${data.sessions_deleted || 0} sessions.`
+        );
+        setShowConfirmModal(false);
+        if (!keepPolicies) {
+          fetchRules();
+          fetchToolSettings();
+        }
+        if (onDatabaseCleaned) {
+          onDatabaseCleaned();
+        }
+        setTimeout(() => setCleanMessage(null), 6000);
+      } else {
+        const err = await res.json();
+        setCleanError(err.detail || 'Failed to clean database.');
+      }
+    } catch (err: any) {
+      setCleanError(err.message || 'Network error occurred while cleaning database.');
+    } finally {
+      setIsCleaning(false);
+    }
   };
 
   const isInfiniteTimeout = formData.approval_timeout_seconds === 0;
@@ -586,6 +631,140 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onUpdate
           )}
         </div>
       </div>
+
+      {/* Database Maintenance & Clean Reset (Start Fresh) */}
+      <div className="p-6 rounded-2xl bg-[#121824] border border-red-900/30 space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#1f293d] pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-red-500/10 text-red-400">
+              <Database className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold text-base text-slate-100">Clean Database Records</h3>
+                <span className="text-[10px] px-2 py-0.5 rounded font-mono font-semibold bg-red-950/40 border border-red-900/50 text-red-400">
+                  START FRESH
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">
+                Purge recorded session logs and intercepted action history to reset the gateway to a clean state.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowConfirmModal(true)}
+            className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-red-600/90 hover:bg-red-600 text-white text-xs font-semibold shadow-md shadow-red-900/20 active:scale-95 transition-all shrink-0"
+          >
+            <Trash2 className="w-4 h-4" /> Clean Database
+          </button>
+        </div>
+
+        {cleanMessage && (
+          <div className="p-3.5 rounded-xl bg-emerald-950/40 border border-emerald-800/50 flex items-center gap-2.5 text-xs text-emerald-300">
+            <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-400" />
+            <span>{cleanMessage}</span>
+          </div>
+        )}
+
+        {cleanError && (
+          <div className="p-3.5 rounded-xl bg-red-950/40 border border-red-800/50 flex items-center gap-2.5 text-xs text-red-300">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-400" />
+            <span>{cleanError}</span>
+          </div>
+        )}
+
+        <div className="p-4 rounded-xl bg-[#0a0d14] border border-[#1f293d] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="space-y-1">
+            <span className="text-xs font-medium text-slate-200 block">Preserve Custom Policies & Tool Settings</span>
+            <p className="text-[11px] text-slate-400">
+              When checked, your custom firewall rules and per-tool thresholds will be preserved, only clearing action records and session history.
+            </p>
+          </div>
+          <label className="flex items-center gap-2.5 cursor-pointer text-xs text-slate-300 flex-shrink-0 select-none">
+            <input
+              type="checkbox"
+              checked={keepPolicies}
+              onChange={(e) => setKeepPolicies(e.target.checked)}
+              className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
+            />
+            <span className="font-mono text-xs">Keep policies & settings</span>
+          </label>
+        </div>
+      </div>
+
+      {/* Confirmation Modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-[#121824] border border-red-900/60 rounded-2xl max-w-md w-full p-6 shadow-2xl shadow-red-950/50 space-y-5">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 rounded-xl bg-red-500/20 text-red-400 flex-shrink-0">
+                <AlertTriangle className="w-6 h-6 animate-pulse" />
+              </div>
+              <div>
+                <h4 className="text-base font-bold text-white">Clean Database & Start Fresh?</h4>
+                <p className="text-xs text-slate-400 mt-1">
+                  This will permanently delete all session histories, action audit logs, and timeline events from SQLite storage.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-[#0a0d14] border border-[#1f293d] space-y-2 text-xs">
+              <div className="flex items-center justify-between text-slate-300">
+                <span>Action audit logs:</span>
+                <span className="font-mono text-red-400 font-semibold">Permanently Wiped</span>
+              </div>
+              <div className="flex items-center justify-between text-slate-300">
+                <span>Recorded AI sessions:</span>
+                <span className="font-mono text-red-400 font-semibold">Permanently Wiped</span>
+              </div>
+              <div className="flex items-center justify-between text-slate-300">
+                <span>Security policy rules:</span>
+                <span className="font-mono font-semibold text-slate-300">
+                  {keepPolicies ? 'Preserved' : 'Permanently Wiped'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-slate-300">
+                <span>Tool governance settings:</span>
+                <span className="font-mono font-semibold text-slate-300">
+                  {keepPolicies ? 'Preserved' : 'Permanently Wiped'}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-amber-400/90 font-mono bg-amber-950/30 p-2.5 rounded-lg border border-amber-900/40">
+              Note: Local chat syncer baselines will be updated so past conversations are not automatically re-imported.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                disabled={isCleaning}
+                className="px-4 py-2 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-[#1a2333] transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleCleanDatabase}
+                disabled={isCleaning}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-semibold shadow-lg shadow-red-600/30 active:scale-95 transition-all disabled:opacity-50"
+              >
+                {isCleaning ? (
+                  <>
+                    <RotateCcw className="w-4 h-4 animate-spin" /> Cleaning...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" /> Yes, Clean Records
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

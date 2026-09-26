@@ -374,3 +374,61 @@ class AuditStore:
                 session.delete(log)
             session.commit()
             return deleted_count
+
+    def clean_records(
+        self,
+        keep_policy_rules: bool = True,
+        keep_tool_settings: bool = True,
+    ) -> Dict[str, int]:
+        """
+        Cleans database records to start fresh.
+        Deletes all action logs and sessions.
+        Optionally deletes policy rules and tool settings if requested.
+        Returns a dictionary of deleted counts by entity type.
+        """
+        with self.get_session() as session:
+            # 1. Action logs must be deleted first due to foreign key constraint to sessions.id
+            action_logs = list(session.exec(select(ActionLog)).all())
+            action_count = len(action_logs)
+            for act in action_logs:
+                session.delete(act)
+
+            # 2. Delete all sessions
+            sessions = list(session.exec(select(SessionRecord)).all())
+            session_count = len(sessions)
+            for s in sessions:
+                session.delete(s)
+
+            # 3. Policy rules (optional)
+            policy_count = 0
+            if not keep_policy_rules:
+                policies = list(session.exec(select(PolicyRule)).all())
+                policy_count = len(policies)
+                for p in policies:
+                    session.delete(p)
+
+            # 4. Tool settings (optional)
+            tool_count = 0
+            if not keep_tool_settings:
+                tools = list(session.exec(select(ToolSetting)).all())
+                tool_count = len(tools)
+                for t in tools:
+                    session.delete(t)
+
+            session.commit()
+
+        # Vacuum SQLite database to reclaim disk space
+        try:
+            with self.engine.connect() as conn:
+                from sqlalchemy import text
+                conn.execution_options(isolation_level="AUTOCOMMIT").execute(text("VACUUM"))
+        except Exception:
+            pass
+
+        return {
+            "actions_deleted": action_count,
+            "sessions_deleted": session_count,
+            "policy_rules_deleted": policy_count,
+            "tool_settings_deleted": tool_count,
+        }
+

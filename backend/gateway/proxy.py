@@ -93,33 +93,6 @@ class GatewayProxy:
 
         # 1. Google Antigravity IDE
         if "antigravity" in c_lower:
-            try:
-                from backend.storage.antigravity_sync import AntigravityChatSyncer
-                syncer = AntigravityChatSyncer(audit_store=self.audit_store)
-                latest_file = syncer.get_latest_transcript_file()
-                if latest_file:
-                    session_stem = latest_file.parent.parent.parent.name
-                    target_id = f"antigravity-{session_stem[:18]}"
-                    existing = self.audit_store.get_session_by_id(target_id)
-                    if existing:
-                        return existing
-
-                    turns = syncer.parse_transcript_file(latest_file)
-                    first_p = turns[0]["prompt"].strip().replace("\n", " ") if turns else ""
-                    short_p = (first_p[:34] + "...") if len(first_p) > 34 else (first_p or "Antigravity Session")
-                    date_str = now.strftime("%b %d, %H:%M")
-                    nice_title = f'Antigravity: "{short_p}" ({date_str})'
-                    new_sess = SessionRecord(
-                        id=target_id,
-                        client_name="Google Antigravity IDE",
-                        title=nice_title,
-                        started_at=now,
-                    )
-                    return self.audit_store.create_session(new_sess)
-            except Exception:
-                pass
-
-            # Fallback if no on-disk transcript yet
             recent_sessions = self.audit_store.list_sessions(limit=10)
             for s in recent_sessions:
                 if "Antigravity" in s.client_name and not s.ended_at:
@@ -136,43 +109,6 @@ class GatewayProxy:
 
         # 2. VS Code / GitHub Copilot
         if "copilot" in c_lower or "code" in c_lower:
-            try:
-                from backend.storage.copilot_sync import CopilotChatSyncer
-                syncer = CopilotChatSyncer(audit_store=self.audit_store)
-                latest_file = syncer.get_latest_chat_session_file()
-                if latest_file:
-                    target_id = f"copilot-{latest_file.stem[:18]}"
-                    existing = self.audit_store.get_session_by_id(target_id)
-                    turns = syncer.parse_chat_session_file(latest_file)
-                    custom_title = turns[0].get("custom_title") if turns else None
-                    first_p = turns[0]["prompt"].strip().replace("\n", " ") if turns else ""
-                    short_p = (first_p[:34] + "...") if len(first_p) > 34 else (first_p or "Copilot Chat")
-                    date_str = now.strftime("%b %d, %H:%M")
-                    nice_title = (
-                        f'VS Code + Copilot: "{custom_title}" ({date_str})'
-                        if custom_title
-                        else f'VS Code + Copilot: "{short_p}" ({date_str})'
-                    )
-
-                    if existing:
-                        if not existing.title or '"Copilot Chat"' in existing.title or "Connected" in existing.title:
-                            existing.title = nice_title
-                            existing.client_name = "VS Code + GitHub Copilot"
-                            self.audit_store.update_session(existing)
-                        return existing
-
-                    # Create session if not yet in DB
-                    new_sess = SessionRecord(
-                        id=target_id,
-                        client_name="VS Code + GitHub Copilot",
-                        title=nice_title,
-                        started_at=now,
-                    )
-                    return self.audit_store.create_session(new_sess)
-            except Exception:
-                pass
-
-            # Fallback if no chat file on disk yet
             recent_sessions = self.audit_store.list_sessions(limit=10)
             for s in recent_sessions:
                 if "Copilot" in s.client_name and not s.ended_at:

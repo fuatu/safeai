@@ -2,7 +2,6 @@
 
 import asyncio
 import os
-from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -69,52 +68,11 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         default_language=config.active_language,
     )
 
-    # 6. Automated Copilot & Antigravity Chat Ingestion Syncers
-    from backend.storage.copilot_sync import CopilotChatSyncer
-    from backend.storage.antigravity_sync import AntigravityChatSyncer
-
-    copilot_syncer = CopilotChatSyncer(
-        audit_store=store,
-        dlp_masker=dlp,
-        ws_broadcast=ws_manager.broadcast,
-    )
-    antigravity_syncer = AntigravityChatSyncer(
-        audit_store=store,
-        dlp_masker=dlp,
-        ws_broadcast=ws_manager.broadcast,
-    )
-
-    # 7. Lifespan context manager for background watchers
-    @asynccontextmanager
-    async def lifespan(fastapi_app: FastAPI):
-        # Sync immediately on startup
-        try:
-            copilot_syncer.sync_all(max_files=50)
-            antigravity_syncer.sync_all(max_files=50)
-        except Exception:
-            pass
-
-        async def chat_watch_loop():
-            while True:
-                try:
-                    await asyncio.sleep(3)
-                    copilot_syncer.sync_recent(max_files=50)
-                    antigravity_syncer.sync_recent(max_files=50)
-                except asyncio.CancelledError:
-                    break
-                except Exception:
-                    pass
-
-        watch_task = asyncio.create_task(chat_watch_loop())
-        yield
-        watch_task.cancel()
-
-    # 8. Build FastAPI App
+    # 6. Build FastAPI App
     app = FastAPI(
         title="SafeAI Core Gateway",
         description="Local-first AI agent security governance proxy and plain-language explainer",
         version="1.0.0",
-        lifespan=lifespan,
     )
 
     # Permissive local CORS for dashboard Web Panel
@@ -136,7 +94,7 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             hitl_broker,
             sec_engine,
             config,
-            copilot_syncer=copilot_syncer,
+            ws_broadcast=ws_manager.broadcast,
             explainer_engine=explainer,
         )
     )

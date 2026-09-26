@@ -173,3 +173,45 @@ def test_legacy_session_backfill_and_title(temp_store):
     assert target.client_name == "VS Code + GitHub Copilot"
     assert "Connected" in target.title
 
+
+def test_clean_records(temp_store):
+    # Setup session and actions
+    sess = SessionRecord(id="sess-clean", client_name="Antigravity")
+    temp_store.create_session(sess)
+
+    act = ActionLog(
+        id="act-clean-1",
+        session_id="sess-clean",
+        tool_name="bash",
+        raw_payload='{"cmd": "ls"}',
+        plain_language_explanation="Lists files.",
+        language_code="en",
+        risk_score=10,
+        risk_factors="[]",
+        status="AUTO_APPROVED",
+    )
+    temp_store.log_action(act)
+
+    rule = PolicyRule(
+        id="rule-clean-1",
+        rule_type="DENY_PATH",
+        pattern="/secret/*",
+    )
+    temp_store.add_policy_rule(rule)
+
+    # 1. Clean keeping policy rules
+    res = temp_store.clean_records(keep_policy_rules=True, keep_tool_settings=True)
+    assert res["actions_deleted"] == 1
+    assert res["sessions_deleted"] == 1
+    assert res["policy_rules_deleted"] == 0
+
+    assert temp_store.get_action("act-clean-1") is None
+    assert temp_store.get_session_by_id("sess-clean") is None
+    assert len(temp_store.get_policy_rules(active_only=False)) == 1
+
+    # 2. Clean with keep_policy_rules=False
+    res2 = temp_store.clean_records(keep_policy_rules=False, keep_tool_settings=False)
+    assert res2["policy_rules_deleted"] == 1
+    assert len(temp_store.get_policy_rules(active_only=False)) == 0
+
+

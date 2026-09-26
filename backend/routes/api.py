@@ -36,12 +36,17 @@ class ConfigUpdateRequest(BaseModel):
     approval_timeout_seconds: Optional[int] = None
 
 
+class DatabaseCleanRequest(BaseModel):
+    keep_policy_rules: bool = True
+    keep_tool_settings: bool = True
+
+
 def create_api_router(
     audit_store: AuditStore,
     hitl_broker: HITLBroker,
     security_engine: SecurityEngine,
     current_config: SystemConfig,
-    copilot_syncer: Optional[Any] = None,
+    ws_broadcast: Optional[Any] = None,
     explainer_engine: Optional[ExplainerEngine] = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api")
@@ -152,16 +157,6 @@ def create_api_router(
                 "risk_factors": assessment.risk_factors,
                 "explanation": explanation,
             }
-
-
-
-    @router.post("/copilot/sync")
-    def sync_copilot_chat() -> Dict[str, Any]:
-        """Scans local VS Code storage and synchronizes Copilot chat history."""
-        if not copilot_syncer:
-            return {"status": "not_configured", "synced_turns": 0}
-        count = copilot_syncer.sync_latest()
-        return {"status": "success", "synced_turns": count}
 
     # -------------------------------------------------------------
     # Approvals & HITL Management
@@ -321,4 +316,44 @@ def create_api_router(
         """Returns ready-to-use AI client configuration snippets and guides."""
         return get_all_client_configs(port=port, host=host)
 
+    # -------------------------------------------------------------
+    # Database Maintenance & Reset
+    # -------------------------------------------------------------
+
+    @router.post("/database/clean")
+    async def clean_database(
+        request: DatabaseCleanRequest = DatabaseCleanRequest(),
+    ) -> Dict[str, Any]:
+        """
+        Cleans database records (action logs and sessions) to start fresh.
+        """
+        stats = audit_store.clean_records(
+            keep_policy_rules=request.keep_policy_rules,
+            keep_tool_settings=request.keep_tool_settings,
+        )
+        if not request.keep_policy_rules:
+            security_engine.set_policy_rules(audit_store.get_policy_rules(active_only=True))
+
+        if ws_broadcast:
+            try:
+                import asyncio
+                msg = {
+                    "type": "DATABASE_CLEANED",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "actionsDeleted": stats["actions_deleted"],
+                    "sessionsDeleted": stats["sessions_deleted"],
+                }
+                res = ws_broadcast(msg)
+                if asyncio.iscoroutine(res):
+                    await res
+            except Exception:
+                pass
+
+        return {
+            "status": "success",
+            "message": "Database records successfully cleaned.",
+            **stats,
+        }
+
     return router
+

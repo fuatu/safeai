@@ -3,6 +3,7 @@ import { PendingApprovalEvent } from '../types';
 
 interface UseSafeAIWebSocketOptions {
   onActionLogged?: (data: any) => void;
+  onDatabaseCleaned?: () => void;
 }
 
 interface UseSafeAIWebSocketReturn {
@@ -18,10 +19,12 @@ export function useSafeAIWebSocket(options?: UseSafeAIWebSocketOptions): UseSafe
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const onActionLoggedRef = useRef(options?.onActionLogged);
+  const onDatabaseCleanedRef = useRef(options?.onDatabaseCleaned);
 
   useEffect(() => {
     onActionLoggedRef.current = options?.onActionLogged;
-  }, [options?.onActionLogged]);
+    onDatabaseCleanedRef.current = options?.onDatabaseCleaned;
+  }, [options?.onActionLogged, options?.onDatabaseCleaned]);
 
   // Play audio chime using Web Audio API (Req 5.2: zero external asset dependency)
   const playAlertChime = useCallback(() => {
@@ -112,6 +115,8 @@ export function useSafeAIWebSocket(options?: UseSafeAIWebSocketOptions): UseSafe
             setPendingApprovals((prev) => prev.filter((p) => p.actionId !== data.actionId));
           } else if (data.type === 'ACTION_LOGGED') {
             onActionLoggedRef.current?.(data);
+          } else if (data.type === 'DATABASE_CLEANED') {
+            onDatabaseCleanedRef.current?.();
           }
         } catch (err) {
           console.error('Failed to parse WebSocket message:', err);

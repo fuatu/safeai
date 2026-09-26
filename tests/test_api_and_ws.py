@@ -175,3 +175,28 @@ async def test_list_actions_all_sessions(app_instance):
         assert isinstance(res.json(), list)
 
 
+@pytest.mark.asyncio
+async def test_clean_database_api(app_instance):
+    async with AsyncClient(transport=ASGITransport(app=app_instance), base_url="http://test") as client:
+        # Add a test policy rule
+        await client.post(
+            "/api/policy/rules",
+            json={"id": "rule-clean-test", "rule_type": "DENY_PATH", "pattern": "/tmp/*"},
+        )
+        # Call clean database endpoint
+        clean_res = await client.post(
+            "/api/database/clean",
+            json={"keep_policy_rules": True, "keep_tool_settings": True},
+        )
+        assert clean_res.status_code == 200
+        data = clean_res.json()
+        assert data["status"] == "success"
+        assert "actions_deleted" in data
+        assert "sessions_deleted" in data
+
+        # Check policy rule is preserved
+        rules_res = await client.get("/api/policy/rules")
+        assert any(r["id"] == "rule-clean-test" for r in rules_res.json())
+
+
+

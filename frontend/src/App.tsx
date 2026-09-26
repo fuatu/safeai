@@ -140,8 +140,19 @@ export const App: React.FC = () => {
     fetchSessions(true);
   }, [selectedSessionId]);
 
+  const handleDatabaseCleaned = useCallback(() => {
+    setSelectedSessionId(null);
+    setActions([]);
+    setLiveActions([]);
+    setSessions([]);
+    setIsViewingDetail(false);
+    fetchSessions();
+    fetchLiveActions();
+  }, []);
+
   const { isConnected, pendingApprovals, submitDecision } = useSafeAIWebSocket({
     onActionLogged: handleActionLogged,
+    onDatabaseCleaned: handleDatabaseCleaned,
   });
 
   useEffect(() => {
@@ -276,7 +287,7 @@ export const App: React.FC = () => {
                   : 'text-slate-400 hover:text-slate-200 hover:bg-[#121824]'
               }`}
             >
-              <Sliders className="w-4 h-4" /> Policy Settings
+              <Sliders className="w-4 h-4" /> Settings
             </button>
             <button
               type="button"
@@ -367,6 +378,7 @@ export const App: React.FC = () => {
           <SettingsPanel
             settings={settings}
             onUpdateSettings={handleUpdateSettings}
+            onDatabaseCleaned={handleDatabaseCleaned}
           />
         )}
 

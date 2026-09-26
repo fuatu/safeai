@@ -186,12 +186,13 @@ When you open **http://localhost:8080**, the top navigation gives you access to 
 - **Session Switcher:** Easily switch between historical and active client sessions with clear client names, action summaries, and timestamps.
 - **Export JSON:** Download clean, sanitized audit logs with permanent secret masking.
 
-### 2. Policy Settings Tab
+### 2. Settings Tab
 - **Human Approval Threshold:** Slider (0 - 100). Default is `50`. Lower values are more cautious; higher values are more permissive.
 - **Active Language:** Set to **"Auto-detect from conversation context & locale"** or lock to a specific language (Turkish, German, Spanish, French, English).
 - **Approval Timeout Window:** Slider (0 - 300 seconds). Set to **0 for ∞ Infinite Hold** (suspends until you explicitly decide).
 - **MCP Tool Governance:** Granular rules per tool (`bash`, `read_file`, `web_search`) or generic wildcard (`*`). You can adjust custom thresholds, toggle bypass, set timeouts, or disable tools entirely.
 - **Deterministic Path & Command Rules:** Define strict blacklists/whitelists (e.g. deny access to `/secrets` or block commands containing `mkfs`).
+- **Clean Database Records (Start Fresh):** Purge historical session logs and action audit records with one click to start fresh while optionally preserving your customized security policies and tool settings.
 
 ### 3. AI Client Connect Tab
 - **One-Click Configurations:** Interactive setup guides, copyable JSON snippets, and direct download buttons for **GitHub Copilot (VS Code)**, **Claude Desktop**, **Google Antigravity IDE**, and **Cursor / Windsurf**.

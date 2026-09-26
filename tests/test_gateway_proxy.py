@@ -207,7 +207,7 @@ async def test_mcp_tool_generic_wildcard_fallback(proxy_env):
 
 @pytest.mark.asyncio
 async def test_mcp_tool_conversational_language_switching(proxy_env):
-    # Chat app sends conversational prompt in Turkish -> explainer switches to Turkish
+    # Explainer strictly follows the configured active language (e.g. 'tr')
     proxy, store, _ = proxy_env
     req = {
         "jsonrpc": "2.0",
@@ -222,7 +222,7 @@ async def test_mcp_tool_conversational_language_switching(proxy_env):
         },
     }
     resp = await proxy.handle_mcp_request(
-        req, session_id="tr-sess", active_language="auto"
+        req, session_id="tr-sess", active_language="tr"
     )
     assert "result" in resp
     actions = store.list_actions("tr-sess")

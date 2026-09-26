@@ -62,18 +62,6 @@ class AuditStore:
         """
         try:
             with self.get_session() as session:
-                target_3cfc = session.get(SessionRecord, "copilot-3cfc5c90-32b4-474c")
-                if target_3cfc:
-                    actions_to_move = [
-                        "act-b458374992f8", "act-c2297095ca96", "act-28fece28f615",
-                        "act-4d1cbda28167", "act-4241c1e72d2c", "act-7b214b4ef48a", "act-ea885453ade7"
-                    ]
-                    for aid in actions_to_move:
-                        act = session.get(ActionLog, aid)
-                        if act and act.session_id != "copilot-3cfc5c90-32b4-474c":
-                            act.session_id = "copilot-3cfc5c90-32b4-474c"
-                            session.add(act)
-
                 all_sessions = list(session.exec(select(SessionRecord)).all())
                 now = datetime.now(timezone.utc)
                 for s in all_sessions:
@@ -88,7 +76,7 @@ class AuditStore:
                     if s.title and ("bash (" in s.title or "read_file" in s.title):
                         matching = list(session.exec(
                             select(SessionRecord)
-                            .where(SessionRecord.id.startswith("copilot-"))
+                            .where((SessionRecord.id.startswith("copilot-")) | (SessionRecord.id.startswith("antigravity-")))
                             .where(SessionRecord.id != s.id)
                         ).all())
                         if matching:
@@ -160,8 +148,8 @@ class AuditStore:
                     r.total_actions = real_action_count
                     updated = True
 
-                # Skip empty dangling sessions with 0 actions older than 3 mins to keep directory clean
-                if r.total_actions == 0 and r.started_at:
+                # Skip empty dangling connection stubs with 0 actions older than 3 mins to keep directory clean
+                if r.total_actions == 0 and r.started_at and ("(Connected" in (r.title or "")):
                     st = r.started_at if r.started_at.tzinfo else r.started_at.replace(tzinfo=timezone.utc)
                     age_seconds = (now - st).total_seconds()
                     if age_seconds > 180:

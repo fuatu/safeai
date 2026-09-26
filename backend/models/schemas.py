@@ -73,7 +73,7 @@ class SystemConfig(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     approval_threshold: int = 50                   # Hold when risk_score >= threshold
-    active_language: str = "auto"                  # 'auto', 'en', 'tr', 'es', 'de', 'fr'
+    active_language: str = "en"                    # 'en', 'tr', 'es', 'de', 'fr' (strictly configured)
     explainer_mode: str = "plain"                  # "plain", "technical", "off"
     dlp_enabled: bool = True
     approval_timeout_seconds: int = 90             # 0 = infinite (no timeout)

@@ -96,7 +96,7 @@ def test_policy_rules_crud(temp_store):
 def test_system_config_defaults():
     cfg = SystemConfig()
     assert cfg.approval_threshold == 50
-    assert cfg.active_language == "auto"
+    assert cfg.active_language == "en"
     assert cfg.explainer_mode == "plain"
     assert cfg.dlp_enabled is True
 

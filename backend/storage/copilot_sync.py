@@ -14,8 +14,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from backend.explainer.engine import ExplainerEngine
 from backend.models.schemas import ActionLog, SessionRecord
 from backend.security.dlp import DLPMasker
+from backend.security.engine import SecurityEngine
 from backend.storage.audit_store import AuditStore
 
 
@@ -31,6 +33,8 @@ class CopilotChatSyncer:
     ):
         self.audit_store = audit_store
         self.dlp_masker = dlp_masker or DLPMasker()
+        self.security_engine = SecurityEngine()
+        self.explainer_engine = ExplainerEngine()
         self.ws_broadcast = ws_broadcast
         self.custom_storage_dir = custom_storage_dir
         self._last_processed_mtime: float = 0
@@ -137,6 +141,7 @@ class CopilotChatSyncer:
                                 "model": model,
                                 "timestamp": ts,
                                 "response_parts": resp_parts,
+                                "tool_calls": [],
                             })
 
                     # 2. Incremental requests batch (kind 2, k == ["requests"])
@@ -156,6 +161,7 @@ class CopilotChatSyncer:
                                     "model": model,
                                     "timestamp": ts,
                                     "response_parts": [],
+                                    "tool_calls": [],
                                 })
 
                     # 3. Incremental response chunks (kind 2, k == ["requests", idx, "response"])
@@ -164,18 +170,87 @@ class CopilotChatSyncer:
                         if isinstance(idx, int) and 0 <= idx < len(requests):
                             for part in v:
                                 if isinstance(part, dict):
-                                    val = part.get("value")
-                                    if isinstance(val, str) and val.strip() and not val.strip().startswith("**"):
-                                        requests[idx]["response_parts"].append(val)
+                                    if part.get("kind") == "toolInvocationSerialized":
+                                        tool_id = part.get("toolId")
+                                        tool_call_id = part.get("toolCallId")
+                                        tool_spec = part.get("toolSpecificData", {})
+                                        cmd = None
+                                        if isinstance(tool_spec, dict):
+                                            cmd_line = tool_spec.get("commandLine")
+                                            if isinstance(cmd_line, dict):
+                                                cmd = cmd_line.get("original") or cmd_line.get("toolEdited")
+                                            elif isinstance(cmd_line, str):
+                                                cmd = cmd_line
+                                            if not cmd and "confirmation" in tool_spec and isinstance(tool_spec["confirmation"], dict):
+                                                cmd = tool_spec["confirmation"].get("commandLine")
+                                            if not cmd and "rawInput" in tool_spec and isinstance(tool_spec["rawInput"], dict):
+                                                cmd = tool_spec["rawInput"].get("command")
+
+                                        if tool_id:
+                                            existing_tc = next((tc for tc in requests[idx]["tool_calls"] if tc.get("id") == tool_call_id), None)
+                                            if not existing_tc:
+                                                requests[idx]["tool_calls"].append({
+                                                    "name": tool_id,
+                                                    "id": tool_call_id,
+                                                    "arguments": {"command": cmd} if cmd else {},
+                                                    "output": "",
+                                                })
+                                            elif cmd and not existing_tc.get("arguments", {}).get("command"):
+                                                existing_tc["arguments"] = {"command": cmd}
+                                    else:
+                                        val = part.get("value")
+                                        if isinstance(val, str) and val.strip() and not val.strip().startswith("**"):
+                                            requests[idx]["response_parts"].append(val)
                                 elif isinstance(part, str) and part.strip():
                                     requests[idx]["response_parts"].append(part)
+
+                    # 4. Result metadata with complete toolCallRounds and responses (kind 1, k == ["requests", idx, "result"])
+                    elif kind == 1 and isinstance(k, list) and len(k) == 3 and k[0] == "requests" and k[2] == "result" and isinstance(v, dict):
+                        idx = k[1]
+                        if isinstance(idx, int) and 0 <= idx < len(requests):
+                            rounds = v.get("metadata", {}).get("toolCallRounds", [])
+                            results = v.get("metadata", {}).get("toolCallResults", {})
+                            for r in rounds:
+                                resp_val = r.get("response")
+                                if isinstance(resp_val, str) and resp_val.strip():
+                                    requests[idx]["response_parts"].append(resp_val.strip())
+                                for tc in r.get("toolCalls", []):
+                                    cid = tc.get("id")
+                                    raw_args = tc.get("arguments", "")
+                                    args = json.loads(raw_args) if isinstance(raw_args, str) and raw_args.strip().startswith("{") else raw_args
+                                    out_val = ""
+                                    res_obj = results.get(cid, {})
+                                    if isinstance(res_obj.get("content"), list):
+                                        for c in res_obj["content"]:
+                                            if isinstance(c, dict) and isinstance(c.get("value"), str):
+                                                out_val += c["value"]
+
+                                    # Update or append
+                                    existing_tc = next((t for t in requests[idx]["tool_calls"] if t.get("id") == cid or (cid and str(cid).startswith(str(t.get("id", "none"))))), None)
+                                    if existing_tc:
+                                        if args:
+                                            existing_tc["arguments"] = args
+                                        if out_val:
+                                            existing_tc["output"] = out_val
+                                    else:
+                                        requests[idx]["tool_calls"].append({
+                                            "name": tc.get("name"),
+                                            "id": cid,
+                                            "arguments": args,
+                                            "output": out_val,
+                                        })
         except Exception:
             return []
 
         # Consolidate responses
         results = []
         for r in requests:
-            resp_text = "\n".join(r["response_parts"]).strip()
+            cleaned_parts = []
+            for p in r["response_parts"]:
+                if p not in cleaned_parts:
+                    cleaned_parts.append(p)
+            resp_text = "\n\n".join(cleaned_parts).strip()
+
             results.append({
                 "id": r["id"],
                 "prompt": r["prompt"],
@@ -183,17 +258,13 @@ class CopilotChatSyncer:
                 "model": r["model"],
                 "timestamp": r["timestamp"],
                 "custom_title": custom_title,
+                "tool_calls": r.get("tool_calls", []),
             })
 
         return results
 
-    def sync_all(self, max_files: int = 25) -> int:
-        """
-        Scans recent VS Code Copilot chat files and imports any unlogged turns
-        into SafeAI's persistent audit store, organizing each into a clearly
-        named session with user prompt snippet, model, and date.
-        """
-        chat_files = self.find_all_chat_session_files(max_files=max_files)
+    def sync_files(self, chat_files: List[Path]) -> int:
+        """Imports conversation turns from the specified chat session files."""
         if not chat_files:
             return 0
 
@@ -249,13 +320,6 @@ class CopilotChatSyncer:
                 req_id = t["id"]
                 action_id = f"copilot-{req_id}"
 
-                # Check if already logged
-                if action_id in self._synced_request_ids:
-                    continue
-                if self.audit_store.get_action(action_id):
-                    self._synced_request_ids.add(action_id)
-                    continue
-
                 prompt = t["prompt"]
                 response = t["response"]
                 model = t["model"]
@@ -266,56 +330,109 @@ class CopilotChatSyncer:
                     else datetime.now(timezone.utc)
                 )
 
-                # DLP redact
-                sanitized_prompt = self.dlp_masker.redact_payload({"text": prompt}).get("text", prompt)
-                sanitized_resp = self.dlp_masker.redact_payload({"text": response}).get("text", response)
+                # Note: Conversational chat turn logging is disabled.
+                # Only tool invocations (MCP and terminal commands) are tracked.
 
-                payload_data = {
-                    "prompt": sanitized_prompt,
-                    "response": sanitized_resp,
-                    "model": model,
-                    "source": "vscode_copilot_chat",
-                }
+                # 2. Sync any tool calls (e.g. run_in_terminal commands) that bypassed MCP
+                tool_calls = t.get("tool_calls", [])
+                for tc in tool_calls:
+                    tc_name = tc.get("name") or tc.get("tool_id")
+                    if tc_name in ("run_in_terminal", "terminal"):
+                        # Extract command
+                        raw_args = tc.get("arguments", {})
+                        if isinstance(raw_args, dict):
+                            cmd = raw_args.get("command") or raw_args.get("commandLine")
+                            explanation_note = raw_args.get("explanation") or raw_args.get("goal")
+                        else:
+                            cmd = str(raw_args)
+                            explanation_note = None
 
-                clean_turn_p = sanitized_prompt.strip().replace("\n", " ")
-                short_prompt = (clean_turn_p[:50] + "...") if len(clean_turn_p) > 50 else clean_turn_p
-                model_short = model.replace("copilot/", "")
+                        if not cmd or not cmd.strip():
+                            continue
 
-                log_entry = ActionLog(
-                    id=action_id,
-                    session_id=target_session.id,
-                    timestamp=created_at,
-                    tool_name="copilot_chat",
-                    raw_payload=json.dumps(payload_data, ensure_ascii=False),
-                    plain_language_explanation=f'Copilot Chat ({model_short}): "{short_prompt}"',
-                    language_code="en",
-                    risk_score=5,
-                    risk_factors=json.dumps(["CONVERSATION_HISTORY"]),
-                    status="AUTO_APPROVED",
-                    user_decision_by="AUTO_POLICY",
-                    execution_result=sanitized_resp or "Response processed by Copilot.",
-                )
-                self.audit_store.log_action(log_entry)
-                self._synced_request_ids.add(action_id)
-                synced_count += 1
+                        cmd = cmd.strip()
+                        tc_id = tc.get("id") or uuid.uuid4().hex[:12]
+                        clean_tc_id = tc_id.replace("call_", "").replace("__vscode-", "-")[:22]
+                        term_action_id = f"term-{clean_tc_id}"
 
-                # Broadcast live update
-                if self.ws_broadcast:
-                    try:
-                        self.ws_broadcast({
-                            "type": "ACTION_LOGGED",
-                            "actionId": action_id,
-                            "sessionId": target_session.id,
-                            "toolName": "copilot_chat",
-                            "status": "AUTO_APPROVED",
-                            "riskScore": 5,
-                            "explanation": log_entry.plain_language_explanation,
-                        })
-                    except Exception:
-                        pass
+                        if term_action_id in self._synced_request_ids:
+                            continue
+                        if self.audit_store.get_action(term_action_id):
+                            self._synced_request_ids.add(term_action_id)
+                            continue
+
+                        # Evaluate security & risk
+                        assessment = self.security_engine.evaluate_payload("bash", {"command": cmd})
+                        plain_explanation = self.explainer_engine.generate_explanation(
+                            tool_name="bash",
+                            payload={"command": cmd},
+                            assessment=assessment,
+                        )
+
+                        # Sanitize output
+                        output = tc.get("output", "")
+                        sanitized_output = self.dlp_masker.redact_payload({"text": output}).get("text", output) if output else "Executed directly in host terminal."
+
+                        term_payload = {
+                            "command": cmd,
+                            "source": "vscode_run_in_terminal",
+                            "tool_call_id": tc_id,
+                            "explanation": explanation_note,
+                        }
+
+                        term_action = ActionLog(
+                            id=term_action_id,
+                            session_id=target_session.id,
+                            timestamp=created_at,
+                            tool_name="bash",
+                            raw_payload=json.dumps(term_payload, ensure_ascii=False),
+                            plain_language_explanation=f"{plain_explanation} (VS Code Terminal)",
+                            language_code="en",
+                            risk_score=assessment.risk_score,
+                            risk_factors=json.dumps(assessment.risk_factors),
+                            status="AUTO_APPROVED",
+                            user_decision_by="HOST_TERMINAL",
+                            execution_result=sanitized_output,
+                        )
+                        self.audit_store.log_action(term_action)
+                        self._synced_request_ids.add(term_action_id)
+                        synced_count += 1
+
+                        if self.ws_broadcast:
+                            try:
+                                self.ws_broadcast({
+                                    "type": "ACTION_LOGGED",
+                                    "actionId": term_action_id,
+                                    "sessionId": target_session.id,
+                                    "toolName": "bash",
+                                    "status": "AUTO_APPROVED",
+                                    "riskScore": assessment.risk_score,
+                                    "explanation": term_action.plain_language_explanation,
+                                    "executionResult": sanitized_output,
+                                })
+                            except Exception:
+                                pass
 
         return synced_count
 
+    def sync_all(self, max_files: int = 25) -> int:
+        """
+        Scans recent VS Code Copilot chat files and imports any unlogged turns
+        into SafeAI's persistent audit store, organizing each into a clearly
+        named session with user prompt snippet, model, and date.
+        """
+        chat_files = self.find_all_chat_session_files(max_files=max_files)
+        return self.sync_files(chat_files)
+
     def sync_latest(self) -> int:
-        """Alias to sync_all for background polling and immediate sync."""
-        return self.sync_all(max_files=15)
+        """Syncs only the single most recently active chat file if active within last 45 minutes."""
+        latest = self.get_latest_chat_session_file()
+        if not latest:
+            return 0
+        try:
+            # Only sync if active within last 45 minutes
+            if (time.time() - latest.stat().st_mtime) > 2700:
+                return 0
+        except Exception:
+            return 0
+        return self.sync_files([latest])

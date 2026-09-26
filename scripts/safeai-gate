@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""
+SafeAI Universal Shell Interceptor Gate.
+Pre-execution security firewall for AI agent terminal executions
+(VS Code GitHub Copilot, Antigravity native runner, Cursor, scripts).
+"""
+
+import os
+import sys
+import json
+import urllib.request
+import urllib.error
+import subprocess
+from typing import List, Optional
+
+
+GATEWAY_URL = os.environ.get("SAFEAI_GATEWAY_URL", "http://localhost:8080/api/eval/intercept")
+FAIL_OPEN = os.environ.get("SAFEAI_FAIL_OPEN", "1").lower() in ("1", "true", "yes")
+
+
+def query_gateway(command_str: str) -> Optional[dict]:
+    """Sends command to SafeAI pre-execution gate for CIA security evaluation."""
+    payload = json.dumps({
+        "command": command_str,
+        "tool_name": "bash",
+        "client_name": os.environ.get("SAFEAI_CLIENT_NAME", "SafeAI Shell Gate"),
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        GATEWAY_URL,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.URLError as e:
+        if FAIL_OPEN:
+            print(f"[SafeAI Gate Notice] Gateway unreachable ({e}). Running in fail-open mode.", file=sys.stderr)
+            return {"decision": "ALLOW", "risk_score": 0, "bypassed": True}
+        else:
+            print(f"[SafeAI Gate ERROR] Gateway unreachable at {GATEWAY_URL}. Start SafeAI or set SAFEAI_FAIL_OPEN=1.", file=sys.stderr)
+            return {"decision": "BLOCK", "reason": "SafeAI gateway unreachable"}
+    except Exception as e:
+        if FAIL_OPEN:
+            return {"decision": "ALLOW", "risk_score": 0, "bypassed": True}
+        return {"decision": "BLOCK", "reason": str(e)}
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: safeai-gate <command> [arguments...]")
+        print("       safeai-gate --eval \"<full command string>\"")
+        sys.exit(1)
+
+    # Parse command
+    if sys.argv[1] == "--eval" and len(sys.argv) > 2:
+        full_command = sys.argv[2]
+        exec_args = None
+    elif sys.argv[1] == "--eval":
+        print("Error: --eval requires a command argument", file=sys.stderr)
+        sys.exit(1)
+    else:
+        full_command = " ".join(sys.argv[1:])
+        exec_args = sys.argv[1:]
+
+    # Query SafeAI Interception Gate
+    eval_result = query_gateway(full_command)
+
+    if not eval_result:
+        sys.exit(1)
+
+    decision = eval_result.get("decision", "BLOCK")
+
+    if decision == "ALLOW":
+        # Safe or Approved -> Execute real command
+        if exec_args:
+            try:
+                # Replace current process with target command
+                os.execvp(exec_args[0], exec_args)
+            except Exception as e:
+                print(f"[SafeAI Gate] Execution error: {e}", file=sys.stderr)
+                sys.exit(127)
+        else:
+            ret = subprocess.call(full_command, shell=True)
+            sys.exit(ret)
+    else:
+        # High Risk and Rejected / Timed Out -> Block
+        reason = eval_result.get("reason", "Action violates security policies")
+        risk_score = eval_result.get("risk_score", 100)
+        explanation = eval_result.get("explanation", "")
+        factors = eval_result.get("risk_factors", [])
+
+        print("", file=sys.stderr)
+        print("=" * 70, file=sys.stderr)
+        print("  🛡️  SafeAI Security Gateway: COMMAND EXECUTION BLOCKED", file=sys.stderr)
+        print("=" * 70, file=sys.stderr)
+        print(f"  Command    : {full_command}", file=sys.stderr)
+        print(f"  Risk Score : {risk_score} / 100", file=sys.stderr)
+        print(f"  Threat Tags: {', '.join(factors) if factors else 'High Risk'}", file=sys.stderr)
+        if explanation:
+            print(f"  Explanation: {explanation}", file=sys.stderr)
+        print(f"  Reason     : {reason}", file=sys.stderr)
+        print("=" * 70, file=sys.stderr)
+        print("  [SafeAI Blocked] Execution aborted to prevent potential data loss or security breach.", file=sys.stderr)
+        print("", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

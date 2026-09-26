@@ -17,6 +17,11 @@ class ExplainerEngine:
     SUPPORTED_LANGUAGES = {"en", "tr", "es", "de", "fr"}
     DEFAULT_LANGUAGE = "en"
 
+    def __init__(self, default_language: str = "en"):
+        self.default_language = (
+            default_language if default_language in self.SUPPORTED_LANGUAGES else self.DEFAULT_LANGUAGE
+        )
+
     # Localized danger alerts for high-risk threat categories
     ALERT_TERMS: Dict[str, Dict[str, str]] = {
         "destructive": {
@@ -26,6 +31,27 @@ class ExplainerEngine:
             "de": "WARNUNG: Diese Aktion ändert oder löscht Dateien und Verzeichnisse auf Ihrem System dauerhaft.",
             "fr": "ATTENTION: Cette action modifie ou supprime définitivement des fichiers et répertoires système.",
         },
+        "dataloss": {
+            "en": "CRITICAL WARNING: This action permanently wipes database records, drops tables, or truncates data.",
+            "tr": "KRİTİK UYARI: Bu işlem veritabanı kayıtlarını, tabloları kalıcı olarak siler veya verileri yok eder.",
+            "es": "ADVERTENCIA CRÍTICA: Esta acción borra permanentemente registros de base de datos o elimina tablas.",
+            "de": "KRITISCHE WARNUNG: Diese Aktion löscht dauerhaft Datenbankdatensätze oder Tabellen.",
+            "fr": "ATTENTION CRITIQUE: Cette action supprime définitivement des enregistrements ou des tables de base de données.",
+        },
+        "cloud": {
+            "en": "WARNING: This action deletes or terminates cloud infrastructure resources (AWS, Azure, GCP, K8s).",
+            "tr": "UYARI: Bu işlem bulut altyapı kaynaklarını (AWS, Azure, GCP, K8s) kalıcı olarak siler veya sonlandırır.",
+            "es": "ADVERTENCIA: Esta acción elimina o termina recursos de infraestructura en la nube.",
+            "de": "WARNUNG: Diese Aktion löscht oder beendet Cloud-Infrastrukturressourcen.",
+            "fr": "ATTENTION: Cette action supprime ou termine des ressources d'infrastructure cloud.",
+        },
+        "availability": {
+            "en": "WARNING: This action forces process termination, stops services, or halts the system.",
+            "tr": "UYARI: Bu işlem çalışan süreçleri zorla sonlandırır, servisleri durdurur veya sistemi kapatır.",
+            "es": "ADVERTENCIA: Esta acción fuerza la finalización de procesos o detiene servicios.",
+            "de": "WARNUNG: Diese Aktion beendet Prozesse gewaltsam oder stoppt Dienste.",
+            "fr": "ATTENTION: Cette action termine des processus ou arrête des services.",
+        },
         "confidentiality": {
             "en": "WARNING: This action accesses sensitive security credentials, private keys, or secret files.",
             "tr": "UYARI: Bu işlem hassas kimlik bilgilerine, gizli anahtarlara veya parola dosyalarına erişir.",
@@ -33,6 +59,7 @@ class ExplainerEngine:
             "de": "WARNUNG: Diese Aktion greift auf vertrauliche Anmeldedaten, private Schlüssel oder Passwörter zu.",
             "fr": "ATTENTION: Cette action accède à des identifiants confidentiels, clés privées ou secrets.",
         },
+
         "exfiltration": {
             "en": "WARNING: This action attempts to send local machine data to an external network endpoint.",
             "tr": "UYARI: Bu işlem yerel bilgisayar verilerinizi harici bir internet adresine sızdırmaya çalışır.",
@@ -149,74 +176,26 @@ class ExplainerEngine:
 
     def detect_language_from_context(self, context_text: Optional[str]) -> Optional[str]:
         """
-        Analyzes conversational tokens and text to heuristically detect active language
-        (Turkish, German, Spanish, French, English).
-        Returns None if not confident.
+        Auto-detection from context has been disabled to strictly honor policy settings.
+        Always returns None.
         """
-        if not context_text or len(context_text.strip()) < 3:
-            return None
-
-        clean_text = context_text.lower()
-        tokens = set(re.findall(r"\b[a-zA-Zçğıöşüäöüßñáéíóúèêàùâîôëï]+\b", clean_text))
-
-        # Combined scoring:
-        # - Exclusive unique character: 3 points
-        # - Vocabulary stopword match: 3 points
-        # - Shared character match: 1 point
-        scores: Dict[str, int] = {lang: 0 for lang in ["tr", "de", "es", "fr", "en"]}
-
-        for lang, words in self.VOCAB_MARKERS.items():
-            matches = tokens & words
-            scores[lang] += len(matches) * 3
-
-        for lang, char_set in self.UNIQUE_CHAR_MARKERS.items():
-            for ch in context_text:
-                if ch in char_set:
-                    scores[lang] += 3
-
-        for lang, char_set in self.SHARED_CHAR_MARKERS.items():
-            for ch in context_text:
-                if ch in char_set:
-                    scores[lang] += 1
-
-        best_lang, best_score = max(scores.items(), key=lambda x: x[1])
-        if best_score >= 3:
-            return best_lang
-
         return None
 
     def resolve_active_language(
         self,
-        user_preference: Optional[str],
+        user_preference: Optional[str] = None,
         context_text: Optional[str] = None,
     ) -> str:
         """
-        Resolves active language preference.
-        If user_preference is 'auto', dynamically detects language from conversation context.
-        Falls back to system locale or initial default ('en') if not confident.
+        Resolves active language strictly from user/system policy setting.
+        Never auto-detects or guesses from code or conversational substrings.
         """
         if user_preference and user_preference != "auto":
             clean = user_preference.strip().lower()[:2]
             if clean in self.SUPPORTED_LANGUAGES:
                 return clean
 
-        # If 'auto' or unspecified, check conversation context first
-        if context_text:
-            detected = self.detect_language_from_context(context_text)
-            if detected in self.SUPPORTED_LANGUAGES:
-                return detected
-
-        # Fallback to system locale detection
-        try:
-            sys_loc = locale.getlocale()[0] or os.environ.get("LANG", "")
-            if sys_loc:
-                sys_lang = sys_loc.split("_")[0].lower()
-                if sys_lang in self.SUPPORTED_LANGUAGES:
-                    return sys_lang
-        except Exception:
-            pass
-
-        return self.DEFAULT_LANGUAGE
+        return getattr(self, "default_language", self.DEFAULT_LANGUAGE)
 
     def get_localized_alert(self, category: str, active_language: str) -> str:
         """Returns localized warning badge phrase for given threat category."""
@@ -236,22 +215,27 @@ class ExplainerEngine:
     ) -> str:
         """
         Generates a 1-2 sentence plain-language summary of consequences
-        in the specified or auto-resolved active language.
+        strictly in the configured active language.
         """
-        # Combine context_text and payload strings for auto-detection
-        full_context = f"{context_text or ''} {str(payload)}"
-        lang = self.resolve_active_language(active_language, context_text=full_context)
+        lang = self.resolve_active_language(active_language)
 
         base_summary = self._describe_action(tool_name, payload, lang)
 
         # Append alert statement if high-risk threat detected (Req 3.7)
+        # Append alert statement if high-risk threat detected
         alert_statement = ""
         if assessment.is_unparseable:
             alert_statement = self.get_localized_alert("unparseable", lang)
-        elif assessment.exfiltration_score >= 85:
-            alert_statement = self.get_localized_alert("exfiltration", lang)
+        elif any("sql_" in f or "data_loss" in f for f in assessment.risk_factors):
+            alert_statement = self.get_localized_alert("dataloss", lang)
+        elif any("aws_" in f or "az_" in f or "gcloud_" in f or "k8s_" in f or "iac_" in f for f in assessment.risk_factors):
+            alert_statement = self.get_localized_alert("cloud", lang)
         elif assessment.integrity_score >= 70:
             alert_statement = self.get_localized_alert("destructive", lang)
+        elif assessment.availability_score >= 70:
+            alert_statement = self.get_localized_alert("availability", lang)
+        elif assessment.exfiltration_score >= 85:
+            alert_statement = self.get_localized_alert("exfiltration", lang)
         elif assessment.confidentiality_score >= 80:
             alert_statement = self.get_localized_alert("confidentiality", lang)
         elif assessment.injection_score >= 75:
@@ -273,10 +257,58 @@ class ExplainerEngine:
                     break
 
         if cmd:
+            # Check for SQL Data Loss
+            if re.search(r"(?i)\b(?:DELETE\s+FROM|DROP\s+TABLE|DROP\s+DATABASE|TRUNCATE)\b", cmd):
+                return {
+                    "en": "Modifies or wipes records in a database table or schema.",
+                    "tr": "Veritabanı tablosundaki kayıtları veya şemayı siliyor ya da sıfırlıyor.",
+                    "es": "Modifica o elimina registros en una tabla o esquema de base de datos.",
+                    "de": "Ändert oder löscht Datensätze in einer Datenbanktabelle oder einem Schema.",
+                    "fr": "Modifie ou supprime des enregistrements dans une table de base de données.",
+                }.get(lang, "Modifies or wipes database table records.")
+
+            # Check for Cloud Mutations
+            if re.search(r"\baws\s+s3\s+(?:rm|rb)\b", cmd):
+                return {
+                    "en": "Deletes files or buckets from AWS S3 cloud storage.",
+                    "tr": "AWS S3 bulut depolamasından dosya veya depolama alanı siliyor.",
+                    "es": "Elimina archivos o depósitos del almacenamiento en la nube AWS S3.",
+                    "de": "Löscht Dateien oder Buckets aus dem AWS S3-Cloud-Speicher.",
+                    "fr": "Supprime des fichiers ou des compartiments du stockage cloud AWS S3.",
+                }.get(lang, "Deletes files from AWS S3 storage.")
+
+            if re.search(r"\b(?:aws\s+ec2\s+terminate-instances|az\s+vm\s+delete|gcloud\s+compute\s+instances\s+delete)\b", cmd):
+                return {
+                    "en": "Permanently terminates virtual machine instances in the cloud.",
+                    "tr": "Buluttaki sanal sunucu örneklerini kalıcı olarak sonlandırıyor.",
+                    "es": "Termina permanentemente instancias de máquinas virtuales en la nube.",
+                    "de": "Beendet virtuelle Maschineninstanzen in der Cloud dauerhaft.",
+                    "fr": "Arrête définitivement des instances de machines virtuelles dans le cloud.",
+                }.get(lang, "Terminates cloud virtual machines.")
+
+            if re.search(r"\b(?:terraform\s+destroy|pulumi\s+destroy)\b", cmd):
+                return {
+                    "en": "Destroys all infrastructure resources provisioned by infrastructure-as-code.",
+                    "tr": "Kod olarak altyapı (IaC) ile oluşturulmuş tüm bulut kaynaklarını yok ediyor.",
+                    "es": "Destruye todos los recursos de infraestructura gestionados por código.",
+                    "de": "Zerstört alle durch Infrastructure-as-Code bereitgestellten Ressourcen.",
+                    "fr": "Détruit toutes les ressources d'infrastructure gérées par code.",
+                }.get(lang, "Destroys all provisioned infrastructure resources.")
+
+            if re.search(r"\b(?:killall|pkill|kill\s+-9)\b", cmd):
+                return {
+                    "en": "Terminates active system processes or services.",
+                    "tr": "Çalışan sistem süreçlerini veya servisleri sonlandırıyor.",
+                    "es": "Termina procesos o servicios activos del sistema.",
+                    "de": "Beendet aktive Systemprozesse oder Dienste.",
+                    "fr": "Termine des processus ou des services système actifs.",
+                }.get(lang, "Terminates system processes.")
+
             # Check for common patterns
             if re.match(r"^rm\b", cmd):
-                target = cmd.replace("rm", "").replace("-rf", "").replace("-r", "").strip() or "specified items"
+                target = cmd.replace("rm", "").replace("-rf", "").replace("-r", "").replace("-f", "").strip() or "specified items"
                 return self.TOOL_TEMPLATES["delete"][lang].format(target=target)
+
             if re.match(r"^(?:ls|dir|find)\b", cmd):
                 target = cmd.split()[-1] if len(cmd.split()) > 1 and not cmd.split()[-1].startswith("-") else "current directory"
                 return self.TOOL_TEMPLATES["list"][lang].format(target=target)
@@ -287,6 +319,22 @@ class ExplainerEngine:
             if cmd.startswith("git "):
                 subcmd = cmd.split()[1] if len(cmd.split()) > 1 else "status"
                 return self.TOOL_TEMPLATES["git"][lang].format(subcmd=subcmd)
+            if re.search(r"\baws\s+iam\s+list-users\b", cmd):
+                return {
+                    "en": "Lists and discovers IAM user accounts in the AWS cloud environment.",
+                    "tr": "AWS bulut ortamındaki IAM kullanıcı hesaplarını listeliyor.",
+                    "es": "Lista las cuentas de usuario IAM en el entorno de AWS.",
+                    "de": "Listet IAM-Benutzerkonten in der AWS-Cloud-Umgebung auf.",
+                    "fr": "Répertorie les comptes d'utilisateurs IAM dans l'environnement cloud AWS.",
+                }.get(lang, "Lists IAM user accounts in AWS.")
+            if re.search(r"\baws\s+sts\s+get-caller-identity\b", cmd):
+                return {
+                    "en": "Checks AWS credentials to verify active account and caller identity.",
+                    "tr": "Etkin hesabı ve kimliği doğrulamak için AWS kimlik bilgilerini kontrol ediyor.",
+                    "es": "Verifica las credenciales de AWS para identificar la cuenta activa.",
+                    "de": "Überprüft die AWS-Anmeldeinformationen zur Überprüfung des aktiven Kontos.",
+                    "fr": "Vérifie les identifiants AWS pour vérifier le compte actif.",
+                }.get(lang, "Checks AWS account and caller identity.")
 
             short_cmd = cmd if len(cmd) <= 40 else cmd[:37] + "..."
             return self.TOOL_TEMPLATES["generic_command"][lang].format(cmd=short_cmd)

@@ -2,7 +2,7 @@
   "mcpServers": {
     "safeai": {
       "type": "sse",
-      "url": "http://localhost:8080/mcp",
+      "url": "http://localhost:8080/mcp?client_name=Google+Antigravity+IDE",
       "description": "SafeAI Local Governance Gateway & Plain-Language Explainer"
     }
   }

@@ -47,7 +47,7 @@ def test_outbound_exfiltration_ge_85(engine):
     res = engine.evaluate_payload("bash", payload)
     assert res.exfiltration_score >= 85
     assert res.risk_score >= 85
-    assert "piped_outbound_exfiltration" in res.risk_factors
+    assert any("piped_outbound_exfiltration" in f for f in res.risk_factors)
 
 
 def test_prompt_injection_ge_75(engine):

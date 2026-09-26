@@ -228,17 +228,52 @@ export const SessionTimeline: React.FC<SessionTimelineProps> = ({ actions, isLoa
               {act.plain_language_explanation}
             </div>
 
-            {/* Risk factors tags */}
+            {/* Risk factors tags with CIA categorization */}
             {factors.length > 0 && (
               <div className="flex flex-wrap gap-1.5 pt-1">
-                {factors.map((f, i) => (
-                  <span
-                    key={i}
-                    className="text-[11px] px-2 py-0.5 rounded bg-red-950/30 border border-red-900/30 text-red-400 font-mono"
-                  >
-                    {f}
-                  </span>
-                ))}
+                {factors.map((f, i) => {
+                  if (typeof f === 'string' && f.startsWith('[Integrity]')) {
+                    return (
+                      <span
+                        key={i}
+                        className="text-[11px] px-2 py-0.5 rounded bg-rose-950/40 border border-rose-800/50 text-rose-300 font-mono inline-flex items-center gap-1"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                        {f}
+                      </span>
+                    );
+                  }
+                  if (typeof f === 'string' && f.startsWith('[Confidentiality]')) {
+                    return (
+                      <span
+                        key={i}
+                        className="text-[11px] px-2 py-0.5 rounded bg-purple-950/40 border border-purple-800/50 text-purple-300 font-mono inline-flex items-center gap-1"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                        {f}
+                      </span>
+                    );
+                  }
+                  if (typeof f === 'string' && f.startsWith('[Availability]')) {
+                    return (
+                      <span
+                        key={i}
+                        className="text-[11px] px-2 py-0.5 rounded bg-amber-950/40 border border-amber-800/50 text-amber-300 font-mono inline-flex items-center gap-1"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                        {f}
+                      </span>
+                    );
+                  }
+                  return (
+                    <span
+                      key={i}
+                      className="text-[11px] px-2 py-0.5 rounded bg-red-950/30 border border-red-900/30 text-red-400 font-mono"
+                    >
+                      {f}
+                    </span>
+                  );
+                })}
               </div>
             )}
 

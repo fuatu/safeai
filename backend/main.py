@@ -69,34 +69,43 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         default_language=config.active_language,
     )
 
-    # 6. Automated Copilot Chat Ingestion Syncer
+    # 6. Automated Copilot & Antigravity Chat Ingestion Syncers
     from backend.storage.copilot_sync import CopilotChatSyncer
+    from backend.storage.antigravity_sync import AntigravityChatSyncer
+
     copilot_syncer = CopilotChatSyncer(
         audit_store=store,
         dlp_masker=dlp,
         ws_broadcast=ws_manager.broadcast,
     )
+    antigravity_syncer = AntigravityChatSyncer(
+        audit_store=store,
+        dlp_masker=dlp,
+        ws_broadcast=ws_manager.broadcast,
+    )
 
-    # 7. Lifespan context manager for background watcher
+    # 7. Lifespan context manager for background watchers
     @asynccontextmanager
     async def lifespan(fastapi_app: FastAPI):
         # Sync immediately on startup
         try:
             copilot_syncer.sync_latest()
+            antigravity_syncer.sync_latest()
         except Exception:
             pass
 
-        async def copilot_watch_loop():
+        async def chat_watch_loop():
             while True:
                 try:
                     await asyncio.sleep(4)
                     copilot_syncer.sync_latest()
+                    antigravity_syncer.sync_latest()
                 except asyncio.CancelledError:
                     break
                 except Exception:
                     pass
 
-        watch_task = asyncio.create_task(copilot_watch_loop())
+        watch_task = asyncio.create_task(chat_watch_loop())
         yield
         watch_task.cancel()
 
@@ -128,6 +137,7 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             sec_engine,
             config,
             copilot_syncer=copilot_syncer,
+            explainer_engine=explainer,
         )
     )
 

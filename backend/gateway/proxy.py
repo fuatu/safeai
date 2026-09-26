@@ -88,7 +88,35 @@ class GatewayProxy:
         """
         now = datetime.now(timezone.utc)
 
-        # 1. For VS Code / Copilot, bind directly to the active on-disk Copilot chat session
+        # 1. For Google Antigravity, bind directly to the active on-disk Antigravity transcript
+        if "Antigravity" in client_name:
+            try:
+                from backend.storage.antigravity_sync import AntigravityChatSyncer
+                syncer = AntigravityChatSyncer(audit_store=self.audit_store)
+                latest_file = syncer.get_latest_transcript_file()
+                if latest_file:
+                    session_stem = latest_file.parent.parent.parent.name
+                    target_id = f"antigravity-{session_stem[:18]}"
+                    existing = self.audit_store.get_session_by_id(target_id)
+                    if existing:
+                        return existing
+
+                    turns = syncer.parse_transcript_file(latest_file)
+                    first_p = turns[0]["prompt"].strip().replace("\n", " ") if turns else ""
+                    short_p = (first_p[:34] + "...") if len(first_p) > 34 else (first_p or "Antigravity Session")
+                    date_str = now.strftime("%b %d, %H:%M")
+                    nice_title = f'Antigravity: "{short_p}" ({date_str})'
+                    new_sess = SessionRecord(
+                        id=target_id,
+                        client_name="Google Antigravity IDE",
+                        title=nice_title,
+                        started_at=now,
+                    )
+                    return self.audit_store.create_session(new_sess)
+            except Exception:
+                pass
+
+        # 2. For VS Code / Copilot, bind directly to the active on-disk Copilot chat session
         if "Copilot" in client_name:
             try:
                 from backend.storage.copilot_sync import CopilotChatSyncer

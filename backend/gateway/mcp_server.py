@@ -22,6 +22,42 @@ class MCPServerRouter:
         self._connection_to_client: Dict[str, str] = {}
         self._setup_routes()
 
+    def _infer_active_client(self) -> str:
+        try:
+            import time
+            from backend.storage.antigravity_sync import AntigravityChatSyncer
+            from backend.storage.copilot_sync import CopilotChatSyncer
+            ag_syncer = AntigravityChatSyncer(audit_store=self.gateway_proxy.audit_store)
+            cp_syncer = CopilotChatSyncer(audit_store=self.gateway_proxy.audit_store)
+            ag_file = ag_syncer.get_latest_transcript_file()
+            cp_file = cp_syncer.get_latest_chat_session_file()
+            ag_mtime = ag_file.stat().st_mtime if ag_file else 0
+            cp_mtime = cp_file.stat().st_mtime if cp_file else 0
+
+            if ag_mtime > cp_mtime and ag_mtime > (time.time() - 3600):
+                return "Google Antigravity IDE"
+            if cp_mtime > 0:
+                return "VS Code + GitHub Copilot"
+            if ag_mtime > 0:
+                return "Google Antigravity IDE"
+        except Exception:
+            pass
+        return "Google Antigravity IDE"
+
+    def _resolve_client(self, client_name: Optional[str], user_agent: str) -> str:
+        user_agent_lower = (user_agent or "").lower()
+        if client_name and client_name != "AI Client":
+            return client_name
+        if "antigravity" in user_agent_lower:
+            return "Google Antigravity IDE"
+        if "copilot" in user_agent_lower or "code" in user_agent_lower:
+            return "VS Code + GitHub Copilot"
+        if "claude" in user_agent_lower:
+            return "Claude Desktop"
+        if "cursor" in user_agent_lower:
+            return "Cursor"
+        return self._infer_active_client()
+
     def _setup_routes(self) -> None:
         @self.router.get("/mcp")
         async def mcp_sse_endpoint(
@@ -32,20 +68,9 @@ class MCPServerRouter:
             Establishes an MCP Server-Sent Events (SSE) stream.
             Sends an initial 'endpoint' event with the messages submission URL.
             """
-            # Detect client from query param or User-Agent header
-            user_agent = (request.headers.get("user-agent") or "").lower()
-            resolved_client = client_name
-            if not resolved_client or resolved_client == "AI Client":
-                if "copilot" in user_agent or "code" in user_agent:
-                    resolved_client = "VS Code + GitHub Copilot"
-                elif "claude" in user_agent:
-                    resolved_client = "Claude Desktop"
-                elif "cursor" in user_agent:
-                    resolved_client = "Cursor"
-                elif "antigravity" in user_agent:
-                    resolved_client = "Google Antigravity"
-                else:
-                    resolved_client = "VS Code + GitHub Copilot"
+            # Detect client from query param, User-Agent header, or active on-disk session
+            user_agent = request.headers.get("user-agent") or ""
+            resolved_client = self._resolve_client(client_name, user_agent)
 
             transport_conn_id = str(uuid.uuid4())
             queue: asyncio.Queue = asyncio.Queue()
@@ -99,10 +124,10 @@ class MCPServerRouter:
                 raise HTTPException(status_code=400, detail="Invalid JSON body")
 
             # Map the transport connection ID to the persistent logical AI session ID
-            resolved_client = self._connection_to_client.get(sessionId, "VS Code + GitHub Copilot")
+            resolved_client = self._connection_to_client.get(sessionId) or self._infer_active_client()
 
-            # For tool calls from Copilot, dynamically re-validate to bind to the latest active chat session
-            if body.get("method") == "tools/call" and "Copilot" in resolved_client:
+            # For tool calls from Copilot or Antigravity, dynamically re-validate to bind to the latest active chat session
+            if body.get("method") == "tools/call" and ("Copilot" in resolved_client or "Antigravity" in resolved_client):
                 active_session = self.gateway_proxy.resolve_active_session_for_client(resolved_client)
                 logical_session_id = active_session.id
                 self._connection_to_session[sessionId] = logical_session_id
@@ -141,21 +166,10 @@ class MCPServerRouter:
             except Exception:
                 raise HTTPException(status_code=400, detail="Invalid JSON body")
 
-            user_agent = (request.headers.get("user-agent") or "").lower()
-            resolved_client = client_name
-            if not resolved_client or resolved_client == "AI Client":
-                if "copilot" in user_agent or "code" in user_agent:
-                    resolved_client = "VS Code + GitHub Copilot"
-                elif "claude" in user_agent:
-                    resolved_client = "Claude Desktop"
-                elif "cursor" in user_agent:
-                    resolved_client = "Cursor"
-                elif "antigravity" in user_agent:
-                    resolved_client = "Google Antigravity"
-                else:
-                    resolved_client = "VS Code + GitHub Copilot"
+            user_agent = request.headers.get("user-agent") or ""
+            resolved_client = self._resolve_client(client_name, user_agent)
 
-            if not sessionId or "Copilot" in resolved_client:
+            if not sessionId or "Copilot" in resolved_client or "Antigravity" in resolved_client:
                 logical_session = self.gateway_proxy.resolve_active_session_for_client(resolved_client)
                 target_session_id = logical_session.id
             else:

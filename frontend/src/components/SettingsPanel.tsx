@@ -236,11 +236,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onUpdate
               <Globe className="w-4 h-4 text-blue-400" /> Active Language (For Dummies Explainer):
             </label>
             <select
-              value={formData.active_language}
+              value={formData.active_language === "auto" ? "en" : formData.active_language}
               onChange={(e) => setFormData({ ...formData, active_language: e.target.value })}
               className="w-full px-3.5 py-2 text-xs rounded-xl bg-[#0a0d14] border border-[#1f293d] text-slate-200 focus:outline-none focus:border-blue-500"
             >
-              <option value="auto">Auto-detect from conversation context & locale</option>
               <option value="en">English (Default)</option>
               <option value="tr">Türkçe (Turkish)</option>
               <option value="es">Español (Spanish)</option>
@@ -248,7 +247,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onUpdate
               <option value="fr">Français (French)</option>
             </select>
             <p className="text-[11px] text-slate-500">
-              Plain-language summaries dynamically adapt to user conversation (Turkish, German, Spanish, etc.) or fall back to system locale.
+              Plain-language summaries strictly follow the selected language policy.
             </p>
           </div>
 

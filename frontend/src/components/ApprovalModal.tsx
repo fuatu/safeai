@@ -159,18 +159,53 @@ export const ApprovalModal: React.FC<ApprovalModalProps> = ({
             </div>
           )}
 
-          {/* Threat Factors List */}
+          {/* Threat Factors List with CIA Triad Badges */}
           {approval.riskFactors && approval.riskFactors.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
-              {approval.riskFactors.map((factor, i) => (
-                <span
-                  key={i}
-                  className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md bg-red-950/40 border border-red-900/50 text-red-300 font-mono"
-                >
-                  <AlertTriangle className="w-3 h-3 text-red-400" />
-                  {factor}
-                </span>
-              ))}
+              {approval.riskFactors.map((factor, i) => {
+                if (factor.startsWith('[Integrity]')) {
+                  return (
+                    <span
+                      key={i}
+                      className="inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-md bg-rose-950/50 border border-rose-800/60 text-rose-300 font-mono"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                      {factor}
+                    </span>
+                  );
+                }
+                if (factor.startsWith('[Confidentiality]')) {
+                  return (
+                    <span
+                      key={i}
+                      className="inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-md bg-purple-950/50 border border-purple-800/60 text-purple-300 font-mono"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                      {factor}
+                    </span>
+                  );
+                }
+                if (factor.startsWith('[Availability]')) {
+                  return (
+                    <span
+                      key={i}
+                      className="inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-md bg-amber-950/50 border border-amber-800/60 text-amber-300 font-mono"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                      {factor}
+                    </span>
+                  );
+                }
+                return (
+                  <span
+                    key={i}
+                    className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md bg-red-950/40 border border-red-900/50 text-red-300 font-mono"
+                  >
+                    <AlertTriangle className="w-3 h-3 text-red-400" />
+                    {factor}
+                  </span>
+                );
+              })}
             </div>
           )}
 

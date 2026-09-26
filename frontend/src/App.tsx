@@ -11,6 +11,7 @@ import { useSafeAIWebSocket } from './hooks/useSafeAIWebSocket';
 import { ApprovalModal } from './components/ApprovalModal';
 import { SessionsPage } from './components/SessionsPage';
 import { SessionDetailView } from './components/SessionDetailView';
+import { LiveActivityView } from './components/LiveActivityView';
 import { SettingsPanel } from './components/SettingsPanel';
 import { ClientConfigPanel } from './components/ClientConfigPanel';
 import { ActionLog, SafeAISettings, SessionRecord } from './types';
@@ -22,6 +23,8 @@ export const App: React.FC = () => {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [actions, setActions] = useState<ActionLog[]>([]);
   const [isLoadingActions, setIsLoadingActions] = useState<boolean>(false);
+  const [liveActions, setLiveActions] = useState<ActionLog[]>([]);
+  const [isLoadingLiveActions, setIsLoadingLiveActions] = useState<boolean>(false);
 
   const [settings, setSettings] = useState<SafeAISettings>({
     approval_threshold: 50,
@@ -99,9 +102,39 @@ export const App: React.FC = () => {
     }
   };
 
+  // Fetch latest 50 actions across ALL sessions for the Live Activity stream
+  const fetchLiveActions = async (silent = false) => {
+    if (!silent) {
+      setIsLoadingLiveActions(true);
+    }
+    try {
+      const res = await fetch('/api/actions?limit=50');
+      if (res.ok) {
+        const data: ActionLog[] = await res.json();
+        setLiveActions((prev) => {
+          if (
+            prev.length === data.length &&
+            prev[0]?.id === data[0]?.id &&
+            prev[0]?.status === data[0]?.status &&
+            prev[prev.length - 1]?.id === data[data.length - 1]?.id
+          ) {
+            return prev;
+          }
+          return data;
+        });
+      }
+    } catch {
+    } finally {
+      if (!silent) {
+        setIsLoadingLiveActions(false);
+      }
+    }
+  };
+
   // WebSocket action listener for instant live events without page reloads
   const handleActionLogged = useCallback((evt: any) => {
-    if (!evt.sessionId || evt.sessionId === selectedSessionId) {
+    fetchLiveActions(true);
+    if (selectedSessionId && (!evt.sessionId || evt.sessionId === selectedSessionId)) {
       fetchActions(selectedSessionId, true);
     }
     fetchSessions(true);
@@ -114,6 +147,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     fetchSettings();
     fetchSessions();
+    fetchLiveActions();
   }, []);
 
   useEffect(() => {
@@ -129,6 +163,7 @@ export const App: React.FC = () => {
         fetchActions(selectedSessionId, true);
       }
       fetchSessions(true);
+      fetchLiveActions(true);
     }, 15000);
     return () => clearInterval(interval);
   }, [selectedSessionId]);
@@ -213,9 +248,7 @@ export const App: React.FC = () => {
               type="button"
               onClick={() => {
                 setActiveTab('live');
-                if (sessions.length > 0 && !selectedSessionId) {
-                  setSelectedSessionId(sessions[0].id);
-                }
+                fetchLiveActions(true);
               }}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
                 activeTab === 'live'
@@ -298,56 +331,26 @@ export const App: React.FC = () => {
           </>
         )}
 
-        {/* Tab 2: Live Activity / Active Monitor */}
+        {/* Tab 2: Live Activity / Active Monitor (Last 50 Activities across ALL Sessions) */}
         {activeTab === 'live' && (
-          <div className="space-y-6">
-            {/* Live Gateway Header Card */}
-            <div className="p-5 rounded-2xl bg-[#121824] border border-[#1f293d] flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
-              <div className="flex items-center gap-3.5">
-                <div className="p-3 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-cyan-400">
-                  <Activity className="w-6 h-6 animate-pulse" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono text-slate-400">Active Live Gateway Monitor</span>
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  </div>
-                  <h3 className="text-base font-bold text-slate-100 mt-0.5">
-                    {selectedSession?.title || 'Monitoring Connected AI Agents'}
-                  </h3>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab('sessions');
-                    setIsViewingDetail(false);
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0a0d14] border border-[#1f293d] hover:border-cyan-500/50 text-cyan-400 text-xs font-semibold transition-colors"
-                >
-                  <Layers className="w-3.5 h-3.5" /> Browse All Sessions Directory &rarr;
-                </button>
-              </div>
-            </div>
-
-            {selectedSession && (
-              <SessionDetailView
-                session={selectedSession}
-                actions={actions}
-                isLoadingActions={isLoadingActions}
-                onBack={() => {
-                  setActiveTab('sessions');
-                  setIsViewingDetail(false);
-                }}
-                onRefresh={() => {
-                  fetchSessions(true);
-                  if (selectedSessionId) fetchActions(selectedSessionId, true);
-                }}
-              />
-            )}
-          </div>
+          <LiveActivityView
+            actions={liveActions}
+            sessions={sessions}
+            isLoading={isLoadingLiveActions}
+            onRefresh={() => {
+              fetchLiveActions();
+              fetchSessions(true);
+            }}
+            onSelectSession={(sessionId) => {
+              setSelectedSessionId(sessionId);
+              setIsViewingDetail(true);
+              setActiveTab('sessions');
+            }}
+            onBrowseSessions={() => {
+              setActiveTab('sessions');
+              setIsViewingDetail(false);
+            }}
+          />
         )}
 
         {/* Tab 3: Security & Governance Settings */}

@@ -167,3 +167,11 @@ async def test_client_configs_api(app_instance):
         assert "safeai" in data["copilot"]["config"]["mcpServers"]
 
 
+@pytest.mark.asyncio
+async def test_list_actions_all_sessions(app_instance):
+    async with AsyncClient(transport=ASGITransport(app=app_instance), base_url="http://test") as client:
+        res = await client.get("/api/actions?limit=50")
+        assert res.status_code == 200
+        assert isinstance(res.json(), list)
+
+

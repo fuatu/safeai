@@ -5,6 +5,7 @@ Requires ZERO external APIs, ZERO custom endpoints, and uses Copilot's
 own subscription models (Gemini 3.8 Flash, GPT-4o, Claude) automatically.
 """
 
+import asyncio
 import glob
 import json
 import os
@@ -39,6 +40,40 @@ class CopilotChatSyncer:
         self.custom_storage_dir = custom_storage_dir
         self._last_processed_mtime: float = 0
         self._synced_request_ids: set = set()
+        self._file_mtimes: Dict[str, float] = {}
+
+    def _broadcast_action(
+        self,
+        action_id: str,
+        session_id: str,
+        tool_name: str,
+        risk_score: int,
+        explanation: str,
+        execution_result: str,
+    ) -> None:
+        """Broadcasts an ACTION_LOGGED notification over WebSocket."""
+        if not self.ws_broadcast:
+            return
+        msg = {
+            "type": "ACTION_LOGGED",
+            "actionId": action_id,
+            "sessionId": session_id,
+            "toolName": tool_name,
+            "status": "AUTO_APPROVED",
+            "riskScore": risk_score,
+            "explanation": explanation,
+            "executionResult": execution_result,
+        }
+        try:
+            res = self.ws_broadcast(msg)
+            if asyncio.iscoroutine(res):
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(res)
+                except RuntimeError:
+                    pass
+        except Exception:
+            pass
 
     def find_workspace_storage_dirs(self) -> List[Path]:
         """Locates VS Code workspaceStorage directories across OS platforms."""
@@ -398,41 +433,58 @@ class CopilotChatSyncer:
                         self._synced_request_ids.add(term_action_id)
                         synced_count += 1
 
-                        if self.ws_broadcast:
-                            try:
-                                self.ws_broadcast({
-                                    "type": "ACTION_LOGGED",
-                                    "actionId": term_action_id,
-                                    "sessionId": target_session.id,
-                                    "toolName": "bash",
-                                    "status": "AUTO_APPROVED",
-                                    "riskScore": assessment.risk_score,
-                                    "explanation": term_action.plain_language_explanation,
-                                    "executionResult": sanitized_output,
-                                })
-                            except Exception:
-                                pass
+                        self._broadcast_action(
+                            action_id=term_action_id,
+                            session_id=target_session.id,
+                            tool_name="bash",
+                            risk_score=assessment.risk_score,
+                            explanation=term_action.plain_language_explanation,
+                            execution_result=sanitized_output,
+                        )
 
         return synced_count
 
-    def sync_all(self, max_files: int = 25) -> int:
+    def sync_all(self, max_files: int = 50) -> int:
         """
         Scans recent VS Code Copilot chat files and imports any unlogged turns
         into SafeAI's persistent audit store, organizing each into a clearly
         named session with user prompt snippet, model, and date.
         """
         chat_files = self.find_all_chat_session_files(max_files=max_files)
-        return self.sync_files(chat_files)
+        synced = self.sync_files(chat_files)
+        for f in chat_files:
+            try:
+                self._file_mtimes[str(f)] = f.stat().st_mtime
+            except Exception:
+                pass
+        return synced
+
+    def sync_recent(self, max_files: int = 50) -> int:
+        """
+        Scans recent VS Code Copilot chat files and synchronizes any file whose mtime changed.
+        Works across all sessions (including older sessions that receive new activities).
+        """
+        chat_files = self.find_all_chat_session_files(max_files=max_files)
+        files_to_sync = []
+        for f in chat_files:
+            try:
+                mtime = f.stat().st_mtime
+                if mtime > self._file_mtimes.get(str(f), 0):
+                    files_to_sync.append(f)
+            except Exception:
+                continue
+
+        if not files_to_sync:
+            return 0
+
+        synced = self.sync_files(files_to_sync)
+        for f in files_to_sync:
+            try:
+                self._file_mtimes[str(f)] = f.stat().st_mtime
+            except Exception:
+                pass
+        return synced
 
     def sync_latest(self) -> int:
-        """Syncs only the single most recently active chat file if active within last 45 minutes."""
-        latest = self.get_latest_chat_session_file()
-        if not latest:
-            return 0
-        try:
-            # Only sync if active within last 45 minutes
-            if (time.time() - latest.stat().st_mtime) > 2700:
-                return 0
-        except Exception:
-            return 0
-        return self.sync_files([latest])
+        """Syncs all recently active chat files across any session."""
+        return self.sync_recent(max_files=50)

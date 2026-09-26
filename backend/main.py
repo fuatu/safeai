@@ -89,17 +89,17 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
     async def lifespan(fastapi_app: FastAPI):
         # Sync immediately on startup
         try:
-            copilot_syncer.sync_latest()
-            antigravity_syncer.sync_latest()
+            copilot_syncer.sync_all(max_files=50)
+            antigravity_syncer.sync_all(max_files=50)
         except Exception:
             pass
 
         async def chat_watch_loop():
             while True:
                 try:
-                    await asyncio.sleep(4)
-                    copilot_syncer.sync_latest()
-                    antigravity_syncer.sync_latest()
+                    await asyncio.sleep(3)
+                    copilot_syncer.sync_recent(max_files=50)
+                    antigravity_syncer.sync_recent(max_files=50)
                 except asyncio.CancelledError:
                     break
                 except Exception:

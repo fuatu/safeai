@@ -1,14 +1,24 @@
 import React from 'react';
 import { ActionLog, SessionRecord } from '../types';
-import { ShieldCheck, ShieldAlert, Clock, CheckCircle2, XCircle, Terminal, FileText, Zap, Sparkles, MessageSquare, User, Bot, RefreshCw } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, Clock, CheckCircle2, XCircle, Terminal, FileText, Zap, Sparkles, MessageSquare, User, Bot, RefreshCw, Layers } from 'lucide-react';
 
 interface SessionTimelineProps {
   actions: ActionLog[];
   isLoading?: boolean;
   session?: SessionRecord | null;
+  sessions?: SessionRecord[];
+  showSessionBadge?: boolean;
+  onSelectSession?: (sessionId: string) => void;
 }
 
-export const SessionTimeline: React.FC<SessionTimelineProps> = ({ actions, isLoading, session }) => {
+export const SessionTimeline: React.FC<SessionTimelineProps> = ({
+  actions,
+  isLoading,
+  session,
+  sessions,
+  showSessionBadge = false,
+  onSelectSession,
+}) => {
   // Never unmount existing timeline when refreshing in the background
   if (isLoading && actions.length === 0) {
     return (
@@ -126,6 +136,10 @@ export const SessionTimeline: React.FC<SessionTimelineProps> = ({ actions, isLoa
           factors = [];
         }
 
+        const actSession =
+          sessions?.find((s) => s.id === act.session_id) ||
+          (session?.id === act.session_id ? session : null);
+
         const isCopilotChat = act.tool_name === 'copilot_chat';
         let chatData: { prompt?: string; response?: string; model?: string } = {};
         if (isCopilotChat) {
@@ -146,12 +160,24 @@ export const SessionTimeline: React.FC<SessionTimelineProps> = ({ actions, isLoa
                     <MessageSquare className="w-4 h-4" />
                   </span>
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-sm text-slate-100">Copilot Conversation Turn</span>
                       {chatData.model && (
                         <span className="text-[10px] px-2 py-0.5 rounded font-mono font-medium bg-purple-950/50 border border-purple-800 text-purple-300">
                           {chatData.model.replace('copilot/', '')}
                         </span>
+                      )}
+                      {showSessionBadge && actSession && (
+                        <button
+                          type="button"
+                          onClick={() => onSelectSession?.(actSession.id)}
+                          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-[#0a0d14] border border-[#1f293d] hover:border-purple-500/50 text-slate-300 hover:text-purple-300 text-xs font-mono transition-all group"
+                          title={`View session: ${actSession.title || actSession.id}`}
+                        >
+                          <Layers className="w-3 h-3 text-purple-400 group-hover:scale-110 transition-transform" />
+                          <span className="truncate max-w-[200px]">{actSession.title || actSession.id}</span>
+                          <span className="text-[10px] text-purple-400">&rarr;</span>
+                        </button>
                       )}
                     </div>
                     <span className="text-xs text-slate-500 font-mono">
@@ -203,7 +229,7 @@ export const SessionTimeline: React.FC<SessionTimelineProps> = ({ actions, isLoa
                   <Terminal className="w-4 h-4" />
                 </span>
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-semibold text-sm text-slate-100">{act.tool_name}</span>
                     <span
                       className={`text-xs px-2 py-0.5 rounded-md border font-mono font-medium ${getRiskScoreColor(
@@ -212,6 +238,18 @@ export const SessionTimeline: React.FC<SessionTimelineProps> = ({ actions, isLoa
                     >
                       Risk {act.risk_score}/100
                     </span>
+                    {showSessionBadge && actSession && (
+                      <button
+                        type="button"
+                        onClick={() => onSelectSession?.(actSession.id)}
+                        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-[#0a0d14] border border-[#1f293d] hover:border-cyan-500/50 text-slate-300 hover:text-cyan-300 text-xs font-mono transition-all group"
+                        title={`View session: ${actSession.title || actSession.id}`}
+                      >
+                        <Layers className="w-3 h-3 text-cyan-400 group-hover:scale-110 transition-transform" />
+                        <span className="truncate max-w-[200px]">{actSession.title || actSession.id}</span>
+                        <span className="text-[10px] text-cyan-400">&rarr;</span>
+                      </button>
+                    )}
                   </div>
                   <span className="text-xs text-slate-500 font-mono">
                     {new Date(act.timestamp).toLocaleTimeString()} · ID: {act.id}

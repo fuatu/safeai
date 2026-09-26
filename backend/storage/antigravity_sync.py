@@ -5,6 +5,7 @@ Requires ZERO external APIs, ZERO custom endpoints, and uses Antigravity's
 local transcript files automatically.
 """
 
+import asyncio
 import glob
 import json
 import os
@@ -39,6 +40,40 @@ class AntigravityChatSyncer:
         self.custom_storage_dir = custom_storage_dir
         self._last_processed_mtime: float = 0
         self._synced_request_ids: set = set()
+        self._file_mtimes: Dict[str, float] = {}
+
+    def _broadcast_action(
+        self,
+        action_id: str,
+        session_id: str,
+        tool_name: str,
+        risk_score: int,
+        explanation: str,
+        execution_result: str,
+    ) -> None:
+        """Broadcasts an ACTION_LOGGED notification over WebSocket."""
+        if not self.ws_broadcast:
+            return
+        msg = {
+            "type": "ACTION_LOGGED",
+            "actionId": action_id,
+            "sessionId": session_id,
+            "toolName": tool_name,
+            "status": "AUTO_APPROVED",
+            "riskScore": risk_score,
+            "explanation": explanation,
+            "executionResult": execution_result,
+        }
+        try:
+            res = self.ws_broadcast(msg)
+            if asyncio.iscoroutine(res):
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(res)
+                except RuntimeError:
+                    pass
+        except Exception:
+            pass
 
     def find_brain_dirs(self) -> List[Path]:
         """Locates Antigravity brain storage directories across container and host."""
@@ -284,6 +319,14 @@ class AntigravityChatSyncer:
                         self.audit_store.log_action(action_entry)
                         self._synced_request_ids.add(tool_action_id)
                         synced_count += 1
+                        self._broadcast_action(
+                            action_id=tool_action_id,
+                            session_id=target_session.id,
+                            tool_name="bash",
+                            risk_score=assessment.risk_score,
+                            explanation=action_entry.plain_language_explanation,
+                            execution_result=sanitized_output,
+                        )
 
                     elif tc_name in ("write_to_file", "replace_file_content", "multi_replace_file_content"):
                         target_file = tc_args.get("TargetFile") or tc_args.get("file_path") or ""
@@ -334,22 +377,54 @@ class AntigravityChatSyncer:
                         self.audit_store.log_action(action_entry)
                         self._synced_request_ids.add(tool_action_id)
                         synced_count += 1
+                        self._broadcast_action(
+                            action_id=tool_action_id,
+                            session_id=target_session.id,
+                            tool_name="write_file",
+                            risk_score=assessment.risk_score,
+                            explanation=action_entry.plain_language_explanation,
+                            execution_result=sanitized_output,
+                        )
 
         return synced_count
 
-    def sync_all(self, max_files: int = 25) -> int:
+    def sync_all(self, max_files: int = 50) -> int:
         """Scans recent Antigravity transcripts and imports them into SafeAI audit store."""
         transcript_files = self.find_all_transcript_files(max_files=max_files)
-        return self.sync_files(transcript_files)
+        synced = self.sync_files(transcript_files)
+        for f in transcript_files:
+            try:
+                self._file_mtimes[str(f)] = f.stat().st_mtime
+            except Exception:
+                pass
+        return synced
+
+    def sync_recent(self, max_files: int = 50) -> int:
+        """
+        Scans recent Antigravity transcripts and synchronizes any file whose mtime changed.
+        Works across all sessions (including older sessions that receive new activities).
+        """
+        transcript_files = self.find_all_transcript_files(max_files=max_files)
+        files_to_sync = []
+        for f in transcript_files:
+            try:
+                mtime = f.stat().st_mtime
+                if mtime > self._file_mtimes.get(str(f), 0):
+                    files_to_sync.append(f)
+            except Exception:
+                continue
+
+        if not files_to_sync:
+            return 0
+
+        synced = self.sync_files(files_to_sync)
+        for f in files_to_sync:
+            try:
+                self._file_mtimes[str(f)] = f.stat().st_mtime
+            except Exception:
+                pass
+        return synced
 
     def sync_latest(self) -> int:
-        """Syncs only the single most recently active transcript file if active within last 45 minutes."""
-        latest = self.get_latest_transcript_file()
-        if not latest:
-            return 0
-        try:
-            if (time.time() - latest.stat().st_mtime) > 2700:
-                return 0
-        except Exception:
-            return 0
-        return self.sync_files([latest])
+        """Syncs all recently active transcript files across any session."""
+        return self.sync_recent(max_files=50)

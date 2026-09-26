@@ -205,6 +205,14 @@ def create_api_router(
             raise HTTPException(status_code=404, detail="Session not found")
         return rec
 
+    @router.get("/actions")
+    def list_actions(
+        limit: int = Query(50, ge=1, le=500),
+        session_id: Optional[str] = Query(None, description="Optional session filter"),
+    ) -> List[ActionLog]:
+        """Lists the latest action logs across all sessions, or filtered by session."""
+        return audit_store.list_actions(session_id=session_id, limit=limit)
+
     @router.get("/sessions/{session_id}/actions")
     def list_session_actions(
         session_id: str, limit: int = Query(100, ge=1, le=500)

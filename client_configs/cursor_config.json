@@ -1,0 +1,15 @@
+{
+  "mcp": {
+    "servers": [
+      {
+        "name": "safeai",
+        "type": "sse",
+        "url": "http://localhost:8080/mcp"
+      }
+    ]
+  },
+  "openai_proxy": {
+    "base_url": "http://localhost:8080/v1",
+    "api_key": "safeai-local-key"
+  }
+}

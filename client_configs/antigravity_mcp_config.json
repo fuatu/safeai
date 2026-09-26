@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "safeai": {
+      "type": "sse",
+      "url": "http://localhost:8080/mcp",
+      "description": "SafeAI Local Governance Gateway & Plain-Language Explainer"
+    }
+  }
+}

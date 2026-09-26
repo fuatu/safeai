@@ -1,0 +1,368 @@
+"""Gateway proxy and MCP protocol router for SafeAI Core."""
+
+import asyncio
+import json
+import subprocess
+import time
+import uuid
+from typing import Any, Callable, Dict, List, Optional
+
+import httpx
+from pydantic import BaseModel, Field
+
+from backend.explainer.engine import ExplainerEngine
+from backend.hitl.broker import DecisionStatus, HITLBroker
+from backend.models.schemas import ActionLog, SessionRecord
+from backend.security.dlp import DLPMasker
+from backend.security.engine import SecurityAssessment, SecurityEngine
+from backend.storage.audit_store import AuditStore
+
+
+class MCPRequest(BaseModel):
+    """Standard Model Context Protocol JSON-RPC 2.0 request."""
+    jsonrpc: str = "2.0"
+    id: Optional[Any] = None
+    method: str
+    params: Optional[Dict[str, Any]] = Field(default_factory=dict)
+
+
+class GatewayProxy:
+    """
+    Transparent security gateway that intercepts MCP tools/call invocations,
+    applies DLP masking, computes multi-vector security risk, generates multilingual
+    explanations, and holds execution via HITLBroker when necessary.
+    """
+
+    def __init__(
+        self,
+        security_engine: SecurityEngine,
+        explainer_engine: ExplainerEngine,
+        hitl_broker: HITLBroker,
+        dlp_masker: DLPMasker,
+        audit_store: AuditStore,
+        downstream_url: Optional[str] = None,
+        default_language: str = "en",
+    ):
+        self.security_engine = security_engine
+        self.explainer_engine = explainer_engine
+        self.hitl_broker = hitl_broker
+        self.dlp_masker = dlp_masker
+        self.audit_store = audit_store
+        self.downstream_url = downstream_url
+        self.default_language = default_language
+        self.active_sessions: Dict[str, SessionRecord] = {}
+
+    def get_or_create_session(self, session_id: Optional[str] = None, client_name: str = "AI Client") -> SessionRecord:
+        """Retrieves or initializes a session record."""
+        sid = session_id or str(uuid.uuid4())
+        existing = self.audit_store.get_session_by_id(sid)
+        if existing:
+            return existing
+
+        new_sess = SessionRecord(id=sid, client_name=client_name)
+        self.audit_store.create_session(new_sess)
+        self.active_sessions[sid] = new_sess
+        return new_sess
+
+    async def handle_mcp_request(
+        self,
+        request_dict: Dict[str, Any],
+        session_id: Optional[str] = None,
+        client_name: str = "AI Client",
+        active_language: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Main ingress handler for MCP JSON-RPC requests.
+        Evaluates and intercepts 'tools/call'.
+        """
+        rpc_id = request_dict.get("id")
+        method = request_dict.get("method", "")
+        params = request_dict.get("params") or {}
+
+        # 1. MCP Handshake & Protocol Methods
+        if method == "initialize":
+            return {
+                "jsonrpc": "2.0",
+                "id": rpc_id,
+                "result": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {
+                        "tools": {"listChanged": True},
+                        "logging": {},
+                    },
+                    "serverInfo": {
+                        "name": "safeai-governance-gateway",
+                        "version": "1.0.0",
+                    },
+                },
+            }
+
+        if method == "notifications/initialized":
+            return {"jsonrpc": "2.0", "id": rpc_id, "result": {}}
+
+        if method == "tools/list":
+            return await self._handle_tools_list(rpc_id, active_language)
+
+        # 2. Intercept tools/call (Req 1.1)
+        if method == "tools/call":
+            return await self._handle_tool_call(
+                rpc_id=rpc_id,
+                params=params,
+                session_id=session_id,
+                client_name=client_name,
+                active_language=active_language,
+            )
+
+        # Unknown method fallback
+        return {
+            "jsonrpc": "2.0",
+            "id": rpc_id,
+            "error": {
+                "code": -32601,
+                "message": f"Method '{method}' not found",
+            },
+        }
+
+    async def _handle_tools_list(
+        self, rpc_id: Any, active_language: Optional[str]
+    ) -> Dict[str, Any]:
+        """Returns registered or proxied tool declarations."""
+        lang = self.explainer_engine.resolve_active_language(active_language)
+        # Standard default tools intercepted by SafeAI
+        default_tools = [
+            {
+                "name": "bash",
+                "description": "Execute shell command on local machine under SafeAI governance."
+                if lang == "en"
+                else "SafeAI gözetiminde yerel terminalde komut çalıştırır.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "command": {"type": "string", "description": "Shell command line to execute"}
+                    },
+                    "required": ["command"],
+                },
+            },
+            {
+                "name": "read_file",
+                "description": "Read file contents from local filesystem.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "file_path": {"type": "string", "description": "Path to file"}
+                    },
+                    "required": ["file_path"],
+                },
+            },
+        ]
+        return {
+            "jsonrpc": "2.0",
+            "id": rpc_id,
+            "result": {"tools": default_tools},
+        }
+
+    async def _handle_tool_call(
+        self,
+        rpc_id: Any,
+        params: Dict[str, Any],
+        session_id: Optional[str],
+        client_name: str,
+        active_language: Optional[str],
+    ) -> Dict[str, Any]:
+        """
+        Intercepts tools/call:
+        1. DLP mask secrets from payload
+        2. Evaluate AST risk
+        3. Generate multilingual explanation
+        4. Check HITL hold
+        5. Execute downstream (or local) if approved
+        6. Return standard JSON-RPC response
+        """
+        session = self.get_or_create_session(session_id, client_name)
+        tool_name = params.get("name", "unknown")
+        raw_arguments = params.get("arguments") or {}
+
+        action_id = f"act-{uuid.uuid4().hex[:12]}"
+        lang = self.explainer_engine.resolve_active_language(active_language or self.default_language)
+
+        # 1. DLP Mask secrets in arguments before security assessment & persistence (Req 6.2)
+        sanitized_arguments = self.dlp_masker.redact_payload(raw_arguments)
+        sanitized_json = json.dumps(sanitized_arguments, ensure_ascii=False)
+
+        # 2. Security Assessment (Req 2.1 - 2.6)
+        assessment = self.security_engine.evaluate_payload(tool_name, sanitized_arguments)
+
+        # 3. Multilingual Plain-Language Explainer (Req 3.1, 3.2, 3.7)
+        explanation = self.explainer_engine.generate_explanation(
+            tool_name=tool_name,
+            payload=sanitized_arguments,
+            assessment=assessment,
+            active_language=lang,
+        )
+
+        # Initial log creation as PENDING / processing
+        action_log = ActionLog(
+            id=action_id,
+            session_id=session.id,
+            tool_name=tool_name,
+            raw_payload=sanitized_json,
+            plain_language_explanation=explanation,
+            language_code=lang,
+            risk_score=assessment.risk_score,
+            risk_factors=json.dumps(assessment.risk_factors),
+            status="PENDING",
+            user_decision_by="AUTO_POLICY" if assessment.risk_score < self.hitl_broker.approval_threshold else None,
+        )
+        self.audit_store.log_action(action_log)
+
+        # 4. HITL Connection Hold Check (Req 4.1 - 4.5)
+        decision = await self.hitl_broker.intercept_and_hold(
+            action_id=action_id,
+            session_id=session.id,
+            tool_name=tool_name,
+            payload=sanitized_arguments,
+            assessment=assessment,
+            plain_explanation=explanation,
+            active_language=lang,
+        )
+
+        action_log.status = decision.value
+        action_log.user_decision_by = "USER_MANUAL" if decision in (DecisionStatus.APPROVED, DecisionStatus.REJECTED) and action_log.user_decision_by is None else (action_log.user_decision_by or "AUTO_POLICY")
+        action_log.decision_notes = self.hitl_broker.get_decision_notes(action_id)
+
+        # If rejected or timed out, abort immediately and return error response
+        if decision == DecisionStatus.REJECTED:
+            self.audit_store.update_action(action_log)
+            return {
+                "jsonrpc": "2.0",
+                "id": rpc_id,
+                "error": {
+                    "code": -32000,
+                    "message": "Security Policy Denial: Action rejected by SafeAI governance proxy",
+                    "data": {
+                        "actionId": action_id,
+                        "riskScore": assessment.risk_score,
+                        "riskFactors": assessment.risk_factors,
+                        "explanation": explanation,
+                    },
+                },
+            }
+
+        if decision == DecisionStatus.TIMED_OUT:
+            self.audit_store.update_action(action_log)
+            return {
+                "jsonrpc": "2.0",
+                "id": rpc_id,
+                "error": {
+                    "code": -32001,
+                    "message": "Approval Timeout: Action rejected because approval timed out",
+                    "data": {"actionId": action_id, "timeoutSeconds": self.hitl_broker.timeout_seconds},
+                },
+            }
+
+        # 5. Forward to downstream or execute locally (Req 1.3, 1.4, 4.3)
+        start_exec = time.perf_counter()
+        try:
+            execution_result = await self.dispatch_execution(
+                tool_name=tool_name,
+                arguments=sanitized_arguments,
+                timeout_ms=15000,
+            )
+            exec_duration_ms = int((time.perf_counter() - start_exec) * 1000)
+
+            # Redact execution output before persistence (Req 6.2, 6.3)
+            sanitized_output = self.dlp_masker.redact_secrets(str(execution_result.get("content", "")))
+            action_log.execution_duration_ms = exec_duration_ms
+            action_log.execution_result = sanitized_output
+            self.audit_store.update_action(action_log)
+
+            return {
+                "jsonrpc": "2.0",
+                "id": rpc_id,
+                "result": {
+                    "content": [
+                        {"type": "text", "text": sanitized_output}
+                    ],
+                    "isError": execution_result.get("isError", False),
+                },
+            }
+
+        except asyncio.TimeoutError:
+            # Req 1.4: Downstream timeout >= 15000ms -> standard JSON-RPC error
+            exec_duration_ms = int((time.perf_counter() - start_exec) * 1000)
+            action_log.execution_duration_ms = exec_duration_ms
+            action_log.status = "TIMED_OUT"
+            action_log.execution_result = "Downstream tool timeout (exceeded 15000ms)"
+            self.audit_store.update_action(action_log)
+
+            return {
+                "jsonrpc": "2.0",
+                "id": rpc_id,
+                "error": {
+                    "code": -32603,
+                    "message": "Downstream tool timeout: failed to respond within 15000ms",
+                },
+            }
+        except Exception as ex:
+            exec_duration_ms = int((time.perf_counter() - start_exec) * 1000)
+            action_log.execution_duration_ms = exec_duration_ms
+            action_log.execution_result = f"Downstream execution error: {str(ex)}"
+            self.audit_store.update_action(action_log)
+
+            return {
+                "jsonrpc": "2.0",
+                "id": rpc_id,
+                "error": {
+                    "code": -32603,
+                    "message": f"Downstream execution error: {str(ex)}",
+                },
+            }
+
+    async def dispatch_execution(
+        self, tool_name: str, arguments: Dict[str, Any], timeout_ms: int = 15000
+    ) -> Dict[str, Any]:
+        """
+        Dispatches tool call to downstream MCP HTTP server if configured,
+        or handles standard safe execution locally.
+        """
+        timeout_sec = timeout_ms / 1000.0
+
+        # If downstream server configured, forward request
+        if self.downstream_url:
+            async with httpx.AsyncClient(timeout=timeout_sec) as client:
+                resp = await client.post(
+                    self.downstream_url,
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": str(uuid.uuid4()),
+                        "method": "tools/call",
+                        "params": {"name": tool_name, "arguments": arguments},
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                result = data.get("result", {})
+                return {
+                    "content": result.get("content", ""),
+                    "isError": result.get("isError", False),
+                }
+
+        # Otherwise, local execution handler for standard tools (e.g. bash, echo)
+        if tool_name in ("bash", "run_command", "shell"):
+            cmd = arguments.get("command", "")
+            proc = await asyncio.wait_for(
+                asyncio.create_subprocess_shell(
+                    cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                ),
+                timeout=timeout_sec,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec)
+            out_str = stdout.decode("utf-8", errors="replace") + stderr.decode("utf-8", errors="replace")
+            return {
+                "content": out_str.strip(),
+                "isError": proc.returncode != 0,
+            }
+
+        return {"content": f"Executed tool '{tool_name}' successfully.", "isError": False}

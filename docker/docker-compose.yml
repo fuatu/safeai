@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  safeai:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: safeai-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - safeai_data:/data
+    environment:
+      - SAFEAI_DB_PATH=/data/safeai.db
+      - DOWNSTREAM_MCP_URL=${DOWNSTREAM_MCP_URL:-}
+      - UPSTREAM_OPENAI_URL=${UPSTREAM_OPENAI_URL:-https://api.openai.com/v1}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  safeai_data:
+    driver: local

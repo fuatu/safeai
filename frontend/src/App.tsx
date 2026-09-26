@@ -48,19 +48,20 @@ export const App: React.FC = () => {
       const res = await fetch('/api/sessions?limit=100');
       if (res.ok) {
         const data: SessionRecord[] = await res.json();
+        const activeData = data.filter((s: SessionRecord) => (s.total_actions || 0) > 0);
         setSessions((prev) => {
           if (
-            prev.length === data.length &&
-            prev[0]?.id === data[0]?.id &&
-            prev[0]?.total_actions === data[0]?.total_actions &&
-            prev[0]?.title === data[0]?.title
+            prev.length === activeData.length &&
+            prev[0]?.id === activeData[0]?.id &&
+            prev[0]?.total_actions === activeData[0]?.total_actions &&
+            prev[0]?.title === activeData[0]?.title
           ) {
             return prev;
           }
-          return data;
+          return activeData;
         });
-        if (data.length > 0 && !selectedSessionId) {
-          setSelectedSessionId(data[0].id);
+        if (activeData.length > 0 && (!selectedSessionId || !activeData.some((s) => s.id === selectedSessionId))) {
+          setSelectedSessionId(activeData[0].id);
         }
       }
     } catch {}

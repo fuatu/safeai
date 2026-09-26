@@ -69,7 +69,7 @@ class AuditStore:
                     st = s.started_at if s.started_at and s.started_at.tzinfo else (s.started_at.replace(tzinfo=timezone.utc) if s.started_at else now)
                     age = (now - st).total_seconds()
 
-                    if action_count == 0 and (age > 120 or s.client_name in ("MCP Client", "mcp", "AI Client")):
+                    if action_count == 0 and (age > 60 or "Hermes" in (s.client_name or "") or s.client_name in ("MCP Client", "mcp", "AI Client")):
                         session.delete(s)
                         continue
 

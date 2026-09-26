@@ -189,8 +189,14 @@ def create_api_router(
     # -------------------------------------------------------------
 
     @router.get("/sessions")
-    def list_sessions(limit: int = Query(50, ge=1, le=200)) -> List[SessionRecord]:
-        return audit_store.list_sessions(limit=limit)
+    def list_sessions(
+        limit: int = Query(50, ge=1, le=200),
+        include_empty: bool = Query(False, description="Include empty sessions with 0 calls"),
+    ) -> List[SessionRecord]:
+        sessions = audit_store.list_sessions(limit=limit)
+        if not include_empty:
+            return [s for s in sessions if (s.total_actions or 0) > 0]
+        return sessions
 
     @router.get("/sessions/{session_id}")
     def get_session(session_id: str) -> SessionRecord:

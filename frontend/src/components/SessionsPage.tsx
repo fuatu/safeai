@@ -31,23 +31,28 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(8);
 
+  // Filter out any sessions with 0 calls/turns
+  const activeSessions = useMemo(() => {
+    return sessions.filter((s) => (s.total_actions || 0) > 0);
+  }, [sessions]);
+
   // Extract unique clients for filter tabs
   const clientOptions = useMemo(() => {
     const clients = new Set<string>();
-    sessions.forEach((s) => {
+    activeSessions.forEach((s) => {
       if (s.client_name) clients.add(s.client_name);
     });
     return Array.from(clients);
-  }, [sessions]);
+  }, [activeSessions]);
 
   // Sort: Most recent to oldest (by started_at descending)
   const sortedSessions = useMemo(() => {
-    return [...sessions].sort((a, b) => {
+    return [...activeSessions].sort((a, b) => {
       const timeA = new Date(a.started_at).getTime() || 0;
       const timeB = new Date(b.started_at).getTime() || 0;
       return timeB - timeA;
     });
-  }, [sessions]);
+  }, [activeSessions]);
 
   // Filter by search query and client
   const filteredSessions = useMemo(() => {
@@ -172,10 +177,10 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                 : 'text-slate-400 hover:text-slate-200 hover:bg-[#0a0d14]'
             }`}
           >
-            All Clients ({sessions.length})
+            All Clients ({activeSessions.length})
           </button>
           {clientOptions.map((client) => {
-            const count = sessions.filter((s) => s.client_name === client).length;
+            const count = activeSessions.filter((s) => s.client_name === client).length;
             const isCopilot = client.includes('Copilot');
             return (
               <button

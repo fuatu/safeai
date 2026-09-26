@@ -32,32 +32,33 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({
   onBack,
   onRefresh,
 }) => {
-  // Sub-tabs: 'all' (default), 'interceptions', or 'chat'
-  const [activeSubTab, setActiveSubTab] = useState<'interceptions' | 'chat' | 'all'>('all');
+  // Sub-tabs: 'all' (Interceptions & Tool Calls), 'blocked' (Blocked / Flagged), 'safe' (Safe Calls)
+  const [activeSubTab, setActiveSubTab] = useState<'all' | 'blocked' | 'safe'>('all');
 
-  const chatTurns = useMemo(() => {
-    return actions.filter((a) => a.tool_name === 'copilot_chat');
+  const isBlockedOrFlagged = (a: ActionLog) =>
+    a.risk_score >= 50 || a.status === 'REJECTED' || a.status === 'TIMED_OUT';
+
+  const blockedOrFlaggedActions = useMemo(() => {
+    return actions.filter(isBlockedOrFlagged);
   }, [actions]);
 
-  const toolInterceptions = useMemo(() => {
-    return actions.filter((a) => a.tool_name !== 'copilot_chat');
+  const safeActions = useMemo(() => {
+    return actions.filter((a) => !isBlockedOrFlagged(a));
   }, [actions]);
 
-  // If there are zero tool calls but there ARE chat turns, automatically suggest chat history or default to chat
   const displayedActions = useMemo(() => {
-    if (activeSubTab === 'interceptions') {
-      return toolInterceptions;
+    if (activeSubTab === 'blocked') {
+      return blockedOrFlaggedActions;
     }
-    if (activeSubTab === 'chat') {
-      return chatTurns;
+    if (activeSubTab === 'safe') {
+      return safeActions;
     }
     return actions;
-  }, [activeSubTab, toolInterceptions, chatTurns, actions]);
+  }, [activeSubTab, blockedOrFlaggedActions, safeActions, actions]);
 
-  const totalActions = session ? session.total_actions : actions.length;
-  const blockedActions = session
-    ? session.blocked_actions
-    : actions.filter((a) => a.risk_score >= 50 || a.status === 'REJECTED').length;
+  const totalActions = actions.length > 0 ? actions.length : (session?.total_actions || 0);
+  const blockedActions =
+    actions.length > 0 ? blockedOrFlaggedActions.length : (session?.blocked_actions || 0);
 
   const isCopilot = (session.client_name || '').includes('Copilot');
   const formattedDate = new Date(session.started_at).toLocaleString([], {
@@ -131,15 +132,15 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({
         blockedActions={blockedActions}
       />
 
-      {/* Interceptions vs Chat History Tabs Header */}
+      {/* Tab Filter Header: Interceptions & Tool Calls | Blocked / Flagged | Safe Calls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2">
         <div className="flex items-center gap-2 bg-[#121824] p-1.5 rounded-2xl border border-[#1f293d]">
-          {/* Sub-tab 1: Interceptions & Tool Calls (Default) */}
+          {/* Sub-tab 1: Interceptions & Tool Calls (All Calls) */}
           <button
             type="button"
-            onClick={() => setActiveSubTab('interceptions')}
+            onClick={() => setActiveSubTab('all')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-              activeSubTab === 'interceptions'
+              activeSubTab === 'all'
                 ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-[#0a0d14]'
             }`}
@@ -147,59 +148,59 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({
             <Terminal className="w-3.5 h-3.5" />
             Interceptions & Tool Calls
             <span
-              className={`text-[10px] px-2 py-0.2 rounded-full font-mono ${
-                activeSubTab === 'interceptions'
+              className={`text-[10px] px-2 py-0.5 rounded-full font-mono ${
+                activeSubTab === 'all'
                   ? 'bg-blue-800 text-blue-100'
                   : 'bg-[#0a0d14] text-slate-400 border border-[#1f293d]'
               }`}
             >
-              {toolInterceptions.length}
-            </span>
-          </button>
-
-          {/* Sub-tab 2: Full Chat History */}
-          <button
-            type="button"
-            onClick={() => setActiveSubTab('chat')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-              activeSubTab === 'chat'
-                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-[#0a0d14]'
-            }`}
-          >
-            <MessageSquare className="w-3.5 h-3.5" />
-            Full Chat History
-            <span
-              className={`text-[10px] px-2 py-0.2 rounded-full font-mono ${
-                activeSubTab === 'chat'
-                  ? 'bg-purple-800 text-purple-100'
-                  : 'bg-[#0a0d14] text-slate-400 border border-[#1f293d]'
-              }`}
-            >
-              {chatTurns.length}
-            </span>
-          </button>
-
-          {/* Sub-tab 3: All Interactions */}
-          <button
-            type="button"
-            onClick={() => setActiveSubTab('all')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-              activeSubTab === 'all'
-                ? 'bg-slate-700 text-white shadow-md'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-[#0a0d14]'
-            }`}
-          >
-            <Layers className="w-3.5 h-3.5" />
-            All Activity
-            <span
-              className={`text-[10px] px-2 py-0.2 rounded-full font-mono ${
-                activeSubTab === 'all'
-                  ? 'bg-slate-800 text-slate-200'
-                  : 'bg-[#0a0d14] text-slate-400 border border-[#1f293d]'
-              }`}
-            >
               {actions.length}
+            </span>
+          </button>
+
+          {/* Sub-tab 2: Blocked / Flagged */}
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('blocked')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+              activeSubTab === 'blocked'
+                ? 'bg-red-600 text-white shadow-md shadow-red-600/20'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-[#0a0d14]'
+            }`}
+          >
+            <ShieldAlert className="w-3.5 h-3.5" />
+            Blocked / Flagged
+            <span
+              className={`text-[10px] px-2 py-0.5 rounded-full font-mono ${
+                activeSubTab === 'blocked'
+                  ? 'bg-red-800 text-red-100'
+                  : 'bg-[#0a0d14] text-slate-400 border border-[#1f293d]'
+              }`}
+            >
+              {blockedOrFlaggedActions.length}
+            </span>
+          </button>
+
+          {/* Sub-tab 3: Safe Calls */}
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('safe')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+              activeSubTab === 'safe'
+                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-[#0a0d14]'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            Safe Calls
+            <span
+              className={`text-[10px] px-2 py-0.5 rounded-full font-mono ${
+                activeSubTab === 'safe'
+                  ? 'bg-emerald-800 text-emerald-100'
+                  : 'bg-[#0a0d14] text-slate-400 border border-[#1f293d]'
+              }`}
+            >
+              {safeActions.length}
             </span>
           </button>
         </div>
@@ -209,36 +210,45 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({
         </span>
       </div>
 
-      {/* Sub-Tab 1 Empty State: If no tool interceptions but there IS chat history */}
-      {activeSubTab === 'interceptions' && toolInterceptions.length === 0 && (
-        <div className="p-8 rounded-2xl bg-[#121824] border border-[#1f293d] space-y-4 text-center">
+      {/* Empty State for Blocked / Flagged */}
+      {activeSubTab === 'blocked' && blockedOrFlaggedActions.length === 0 && (
+        <div className="p-8 rounded-2xl bg-[#121824] border border-[#1f293d] space-y-3 text-center">
           <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto">
             <ShieldCheck className="w-6 h-6" />
           </div>
           <div>
             <h3 className="text-sm font-semibold text-slate-100">
-              No High-Risk Tool Executions Intercepted in this Session
+              No Blocked or Flagged Invocations
             </h3>
             <p className="text-xs text-slate-400 max-w-lg mx-auto mt-1 leading-relaxed">
-              SafeAI only intercepts and screens <strong>executable tools</strong> (shell commands, file modifications, sensitive API calls). This session consists of conversational dialogue with zero dangerous tool calls held.
+              All tool calls and executions in this session were verified safe and executed without policy violations.
             </p>
           </div>
+        </div>
+      )}
 
-          {chatTurns.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setActiveSubTab('chat')}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold transition-all shadow-md shadow-purple-600/20"
-            >
-              <MessageSquare className="w-4 h-4" />
-              View Full Chat History ({chatTurns.length} turns) &rarr;
-            </button>
-          )}
+      {/* Empty State for Safe Calls */}
+      {activeSubTab === 'safe' && safeActions.length === 0 && (
+        <div className="p-8 rounded-2xl bg-[#121824] border border-[#1f293d] space-y-3 text-center">
+          <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-400 flex items-center justify-center mx-auto">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-100">
+              No Safe Calls in this View
+            </h3>
+            <p className="text-xs text-slate-400 max-w-lg mx-auto mt-1 leading-relaxed">
+              All calls recorded in this session were flagged or held for human-in-the-loop review.
+            </p>
+          </div>
         </div>
       )}
 
       {/* Timeline of displayed actions */}
-      {(activeSubTab !== 'interceptions' || toolInterceptions.length > 0) && (
+      {((activeSubTab === 'all' && actions.length > 0) ||
+        (activeSubTab === 'blocked' && blockedOrFlaggedActions.length > 0) ||
+        (activeSubTab === 'safe' && safeActions.length > 0) ||
+        actions.length === 0) && (
         <SessionTimeline
           actions={displayedActions}
           isLoading={isLoadingActions}

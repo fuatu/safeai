@@ -22,7 +22,6 @@ export const App: React.FC = () => {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [actions, setActions] = useState<ActionLog[]>([]);
   const [isLoadingActions, setIsLoadingActions] = useState<boolean>(false);
-  const [isSyncingCopilot, setIsSyncingCopilot] = useState<boolean>(false);
 
   const [settings, setSettings] = useState<SafeAISettings>({
     approval_threshold: 50,
@@ -132,18 +131,6 @@ export const App: React.FC = () => {
     }, 15000);
     return () => clearInterval(interval);
   }, [selectedSessionId]);
-
-  const handleSyncCopilot = async () => {
-    setIsSyncingCopilot(true);
-    try {
-      await fetch('/api/copilot/sync', { method: 'POST' });
-      await fetchSessions(true);
-      if (selectedSessionId) {
-        await fetchActions(selectedSessionId, true);
-      }
-    } catch {}
-    setTimeout(() => setIsSyncingCopilot(false), 600);
-  };
 
   const handleUpdateSettings = async (updates: Partial<SafeAISettings>) => {
     try {
@@ -297,8 +284,6 @@ export const App: React.FC = () => {
                   fetchSessions(true);
                   if (selectedSessionId) fetchActions(selectedSessionId, true);
                 }}
-                onSyncCopilot={handleSyncCopilot}
-                isSyncingCopilot={isSyncingCopilot}
               />
             ) : (
               <SessionsPage
@@ -307,8 +292,6 @@ export const App: React.FC = () => {
                   setSelectedSessionId(id);
                   setIsViewingDetail(true);
                 }}
-                onSyncCopilot={handleSyncCopilot}
-                isSyncingCopilot={isSyncingCopilot}
               />
             )}
           </>
@@ -361,8 +344,6 @@ export const App: React.FC = () => {
                   fetchSessions(true);
                   if (selectedSessionId) fetchActions(selectedSessionId, true);
                 }}
-                onSyncCopilot={handleSyncCopilot}
-                isSyncingCopilot={isSyncingCopilot}
               />
             )}
           </div>

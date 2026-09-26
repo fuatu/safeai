@@ -23,8 +23,6 @@ interface SessionDetailViewProps {
   isLoadingActions: boolean;
   onBack: () => void;
   onRefresh: () => void;
-  onSyncCopilot: () => Promise<void>;
-  isSyncingCopilot: boolean;
 }
 
 export const SessionDetailView: React.FC<SessionDetailViewProps> = ({
@@ -33,8 +31,6 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({
   isLoadingActions,
   onBack,
   onRefresh,
-  onSyncCopilot,
-  isSyncingCopilot,
 }) => {
   // Sub-tabs: 'all' (default), 'interceptions', or 'chat'
   const [activeSubTab, setActiveSubTab] = useState<'interceptions' | 'chat' | 'all'>('all');
@@ -94,15 +90,6 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({
               title="Refresh Session"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={onSyncCopilot}
-              disabled={isSyncingCopilot}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-950/40 hover:bg-purple-900/50 border border-purple-800/60 text-purple-200 text-xs font-semibold transition-all"
-            >
-              <MessageSquare className={`w-3.5 h-3.5 ${isSyncingCopilot ? 'animate-pulse text-cyan-300' : 'text-purple-400'}`} />
-              {isSyncingCopilot ? 'Syncing...' : 'Sync Copilot Chat'}
             </button>
           </div>
         </div>

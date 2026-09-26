@@ -20,15 +20,11 @@ import { SessionRecord } from '../types';
 interface SessionsPageProps {
   sessions: SessionRecord[];
   onSelectSession: (sessionId: string) => void;
-  onSyncCopilot: () => Promise<void>;
-  isSyncingCopilot: boolean;
 }
 
 export const SessionsPage: React.FC<SessionsPageProps> = ({
   sessions,
   onSelectSession,
-  onSyncCopilot,
-  isSyncingCopilot,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClient, setSelectedClient] = useState('ALL');
@@ -134,16 +130,6 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
             Search, filter, and inspect past AI agent conversations, Copilot chat sessions, and guarded tool invocations. Ordered from most recent to oldest.
           </p>
         </div>
-
-        <button
-          type="button"
-          onClick={onSyncCopilot}
-          disabled={isSyncingCopilot}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-950/40 hover:bg-purple-900/50 border border-purple-800/60 text-purple-200 text-xs font-semibold transition-all shadow-sm hover:border-purple-700 self-start md:self-auto shrink-0"
-        >
-          <MessageSquare className={`w-4 h-4 ${isSyncingCopilot ? 'animate-pulse text-cyan-300' : 'text-purple-400'}`} />
-          {isSyncingCopilot ? 'Scanning Storage...' : 'Sync Copilot Chat'}
-        </button>
       </div>
 
       {/* Search and Filters Bar */}

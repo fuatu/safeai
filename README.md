@@ -16,18 +16,26 @@ Autonomous AI coding agents are incredibly smart, but they can make catastrophic
 
 ```mermaid
 graph LR
-    Agent["🤖 AI Agent<br/>(Claude, Antigravity, Cursor)"] -->|Proposes Action| SafeAI["🛡️ SafeAI Gateway<br/>(Scans Risk & Translates)"]
+    Agent["🤖 AI Agent<br/>(Copilot, Claude, Cursor)"] -->|Calls Tool (bash/files)| SafeAI["🛡️ SafeAI Gateway<br/>(Scans Risk & Explains)"]
     SafeAI -->|1. Safe Action?| Auto["⚡ Runs Automatically"]
     SafeAI -->|2. Dangerous Action?| Human["🛑 Pauses & Asks You!<br/>Web Panel Sound Alert"]
     Human -->|You Click Approve| Runs["✅ Runs on your PC"]
     Human -->|You Click Deny| Abort["⛔ Blocked in 100ms!"]
 ```
 
+> [!IMPORTANT]
+> **SafeAI Works Seamlessly with Your Existing AI Tools (No API Keys Required):**  
+> SafeAI is designed to work with your tool's own built-in models (e.g. GitHub Copilot subscription, Claude, Cursor) with **zero API keys and zero endpoints to configure**:
+> - **Automated Chat History Ingestion:** SafeAI automatically monitors and records your GitHub Copilot conversation turns directly from VS Code local storage (`workspaceStorage/*/chatSessions/*.jsonl`). Every prompt, assistant reply, and model badge is recorded in your Live Activity timeline in real time.
+> - **Action & Tool Execution Firewall:** When the AI agent attempts to run a terminal command (`bash`), edit code, or read sensitive files, SafeAI screens the tool call, generates plain-language explanations, and holds risky actions for human approval.
+> - **Meaningful Session Naming:** Sessions are automatically titled with your prompt topic, client name, and timestamp (e.g. `VS Code + Copilot: "Run git status..." (Sep 26, 14:06)`).
+
 1. **Traffic Light Risk Scoring:** SafeAI scans every command across destruction, secrets access, data theft, and prompt hacks.
 2. **"For Dummies" Explainer:** Translates terminal mumbo-jumbo into 1-2 simple sentences in your natural language (English, Turkish, Spanish, German, French, etc.).
 3. **Emergency Pause:** If a command is risky, SafeAI freezes the connection and rings a chime on your screen. You click **"Approve"** or **"Deny"**.
-4. **Secret Masker (DLP):** Automatically blacks out your passwords, API keys, and tokens so they never get logged in plain text.
-5. **100% Local & Private:** Runs entirely on your own computer. No data ever leaves your network.
+4. **Automated Chat & Tool History:** Automatically logs Copilot chat conversations and tool executions without requiring you to provide an API key or proxy your models.
+5. **Secret Masker (DLP):** Automatically blacks out passwords, API keys, and tokens so they never get logged in plain text.
+6. **100% Local & Private:** Runs entirely on your own computer. No data ever leaves your network.
 
 ---
 
@@ -99,7 +107,33 @@ This creates ready-to-use configuration files inside the `client_configs/` direc
 ```
 3. Restart Claude Desktop. Claude is now protected!
 
-### 2. Google Antigravity IDE
+### 2. GitHub Copilot (VS Code)
+
+You can add SafeAI to GitHub Copilot in VS Code in two ways:
+
+#### Option A: Using the VS Code "Add MCP Server" Wizard (Recommended)
+1. In VS Code, click **Add MCP Server** (from Copilot Chat or the Command Palette).
+2. Select **`HTTP (HTTP or Server-Sent Events)`** (the 2nd option in the menu).
+3. **Server name / ID**: enter `safeai`
+4. **Server URL**: enter `http://localhost:8080/mcp`
+*(Alternatively, if you prefer `Command (stdio)`: command `npx`, args `-y mcp-remote http://localhost:8080/mcp`)*.
+
+#### Option B: Workspace `.vscode/mcp.json` File
+Alternatively, add SafeAI to your workspace `.vscode/mcp.json`:
+```json
+{
+  "mcpServers": {
+    "safeai": {
+      "type": "sse",
+      "url": "http://localhost:8080/mcp",
+      "description": "SafeAI Agent Guard & Explainer for GitHub Copilot"
+    }
+  }
+}
+```
+Copilot Chat in Agent mode will now route all tools through SafeAI!
+
+### 3. Google Antigravity IDE
 Add SafeAI to your workspace `.agents/mcp_config.json` or global config:
 ```json
 {
@@ -120,43 +154,44 @@ Add SafeAI to your workspace `.agents/mcp_config.json` or global config:
 
 ---
 
-## 🖥️ How to Use the Web Panel
+## 🖥️ How to Use the Web Panel (http://localhost:8080)
 
-When you open **http://localhost:8080**, you will see:
+When you open **http://localhost:8080**, the top navigation gives you access to three main areas:
 
-### 1. The Live Approval Popup
-When your AI agent attempts something high-risk, a popup window will immediately appear with a warning chime:
-- **Risk Badge:**
-  - 🟢 **Green (0 - 49):** Safe actions (runs automatically).
-  - 🟡 **Yellow (50 - 69):** Elevated risk (caution advised).
-  - 🔴 **Red (70 - 100):** Dangerous action (e.g., deleting folders, reading passwords).
-- **Consequence Summary:** Reads like:
-  > *"WARNING: This action permanently alters or deletes files and directories on your system."*  
-  > Or in Turkish: *"UYARI: Bu işlem sisteminizdeki dosya veya dizinleri kalıcı olarak siler veya değiştirir."*
-- **Countdown Clock:** You have 90 seconds to review before SafeAI safely rejects the command.
-- **Buttons:** Click **Approve & Execute** to let it run, or **Deny & Abort** to cancel it instantly.
+### 1. Live Activity Tab
+- **Connected Client Indicator:** See at a glance which AI client (e.g. `VS Code + GitHub Copilot Active`) is connected to the gateway.
+- **Standby Status:** When your AI client is connected and waiting for tool calls, the panel displays **"Agent Guard Active — Standing By"** with quick prompt suggestions.
+- **Intercepted Invocations:** Every tool call (terminal execution, file read/write) appears in real time via WebSockets with risk scoring, DLP-masked arguments, and plain-language explanation.
+- **Live Approval Popup:** When an action poses high risk (risk score ≥ your threshold), SafeAI halts execution with a sound alert and shows the approval modal. Click **Approve** to execute or **Deny** to abort.
+- **Session Switcher:** Easily switch between historical and active client sessions with clear client names, action summaries, and timestamps.
+- **Export JSON:** Download clean, sanitized audit logs with permanent secret masking.
 
-### 2. Explainer View Modes
-In the popup or settings, you can switch view modes:
-- **Plain Language (Default):** Highlights what happens in everyday words so non-technical users can make an informed choice.
-- **Technical:** Shows the exact bash command, script, or payload diff.
-- **Off:** Disables plain explanations.
+### 2. Policy Settings Tab
+- **Human Approval Threshold:** Slider (0 - 100). Default is `50`. Lower values are more cautious; higher values are more permissive.
+- **Active Language:** Set to **"Auto-detect from conversation context & locale"** or lock to a specific language (Turkish, German, Spanish, French, English).
+- **Approval Timeout Window:** Slider (0 - 300 seconds). Set to **0 for ∞ Infinite Hold** (suspends until you explicitly decide).
+- **MCP Tool Governance:** Granular rules per tool (`bash`, `read_file`, `web_search`) or generic wildcard (`*`). You can adjust custom thresholds, toggle bypass, set timeouts, or disable tools entirely.
+- **Deterministic Path & Command Rules:** Define strict blacklists/whitelists (e.g. deny access to `/secrets` or block commands containing `mkfs`).
 
-### 3. Settings & Language Customization
-Click the **"Policy Settings"** tab at the top right:
-- **Human Approval Threshold:** Move the slider (default: `50`). Setting it lower makes SafeAI more cautious; setting it higher makes it more permissive.
-- **Active Language:** Set to **"Auto-detect from conversation context & locale"** (or lock to Turkish, German, Spanish, French, or English). When set to auto, SafeAI **automatically detects whether your chat app prompt is in Turkish, German, Spanish, French, or English** and switches explanations on the fly!
-- **Approval Timeout Window:** Move the slider from 0 to 300 seconds. Setting it to **`0 seconds` enables ∞ Infinite Hold**, meaning SafeAI will suspend high-risk actions indefinitely until you explicitly click Approve or Deny!
-- **MCP Tool Governance:** Configure granular security settings per tool (e.g. `bash`, `read_file`, `web_search`) or set default policy on the **Generic Tool (`*`) fallback**. You can customize thresholds, enable/disable tools, route to custom downstream servers, adjust timeouts, or bypass approval for trusted actions.
-- **Deterministic Rules:** Add custom command or path blacklists (e.g. block any command containing `mkfs` or access to `/secrets`).
-
-### 4. Audit Trail & Log Export
-- View every action your AI performed in the **Live Activity** tab.
-- Click **"Export JSON"** to download a clean log report. All sensitive passwords and API keys are permanently masked as `[REDACTED_*]`.
+### 3. AI Client Connect Tab
+- **One-Click Configurations:** Interactive setup guides, copyable JSON snippets, and direct download buttons for **GitHub Copilot (VS Code)**, **Claude Desktop**, **Google Antigravity IDE**, and **Cursor / Windsurf**.
+- **Configurable Port:** Adjust your gateway port on the fly to generate custom configuration snippets.
 
 ---
 
 ## ❓ Frequently Asked Questions (FAQ)
+
+#### Q: Why don't I see my normal chat messages in SafeAI?
+**A:** In the Model Context Protocol (MCP), normal conversational text travels directly between your client (VS Code) and the AI's cloud model. SafeAI is an **Agent Guard & Tool Firewall**: it stays silent during regular conversation and activates the instant the agent attempts to run a tool (like executing a bash command or reading a file) on your computer.
+
+#### Q: How do I know if my AI client is connected?
+**A:** When your client connects to `http://localhost:8080/mcp`, SafeAI automatically detects the client name and shows a green badge in the dashboard header: **`VS Code + GitHub Copilot Active`**. The session dropdown will also show `VS Code + GitHub Copilot (Connected)`.
+
+#### Q: How do I trigger an interception to test SafeAI?
+**A:** In Copilot Chat (Agent mode), ask Copilot to perform an action using tools, for example:
+- `"Run git status using bash"`
+- `"Read the file README.md"`
+- `"Inspect .env file"` *(will trigger an immediate high-risk approval alert!)*
 
 #### Q: Does SafeAI slow down my AI agent?
 **A:** No! SafeAI calculates risk in less than 20 milliseconds. If the action is safe, it runs immediately without perceptible delay.

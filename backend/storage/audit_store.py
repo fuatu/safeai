@@ -45,6 +45,14 @@ class AuditStore:
     def _init_db(self) -> None:
         """Creates tables if they do not exist."""
         SQLModel.metadata.create_all(self.engine)
+        # Migrate schema safely if 'title' column does not exist
+        try:
+            with self.engine.connect() as conn:
+                from sqlalchemy import text
+                conn.execute(text("ALTER TABLE sessions ADD COLUMN title VARCHAR"))
+                conn.commit()
+        except Exception:
+            pass  # Already exists or table created with title
 
     def get_session(self) -> Session:
         """Returns a new database session with non-expiring attributes."""
@@ -79,7 +87,34 @@ class AuditStore:
         """Lists recent sessions ordered by start time descending."""
         with self.get_session() as session:
             statement = select(SessionRecord).order_by(SessionRecord.started_at.desc()).limit(limit)
-            return list(session.exec(statement).all())
+            records = list(session.exec(statement).all())
+            # Backfill legacy generic 'AI Client' records with informative names & titles
+            updated = False
+            for r in records:
+                if r.client_name in ("AI Client", "AI Client..."):
+                    r.client_name = "VS Code + GitHub Copilot"
+                    updated = True
+                date_str = r.started_at.strftime("%b %d, %H:%M") if r.started_at else ""
+                if r.title and "AI Client:" in r.title:
+                    r.title = r.title.replace("AI Client:", "VS Code + Copilot:")
+                    if date_str and date_str not in r.title:
+                        r.title += f" ({date_str})"
+                    session.add(r)
+                    updated = True
+                elif r.title and r.title.endswith("(Connected)") and date_str:
+                    r.title = f"{r.client_name} (Connected · {date_str})"
+                    session.add(r)
+                    updated = True
+                elif not r.title:
+                    if r.total_actions == 0:
+                        r.title = f"{r.client_name} (Connected · {date_str})" if date_str else f"{r.client_name} (Connected)"
+                    else:
+                        r.title = f"{r.client_name} ({r.total_actions} actions · {date_str})" if date_str else f"{r.client_name} ({r.total_actions} actions)"
+                    session.add(r)
+                    updated = True
+            if updated:
+                session.commit()
+            return records
 
     # ---------------------------------------------------------
     # ActionLog Operations

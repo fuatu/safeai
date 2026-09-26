@@ -11,6 +11,7 @@ services:
       - "8080:8080"
     volumes:
       - safeai_data:/data
+      - ${HOME}/Library/Application Support/Code/User/workspaceStorage:/vscode_storage:ro
     environment:
       - SAFEAI_DB_PATH=/data/safeai.db
       - DOWNSTREAM_MCP_URL=${DOWNSTREAM_MCP_URL:-}

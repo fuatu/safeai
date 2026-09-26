@@ -24,16 +24,35 @@ class MCPServerRouter:
         @self.router.get("/mcp")
         async def mcp_sse_endpoint(
             request: Request,
-            client_name: str = Query("AI Client", description="Name of connecting client"),
+            client_name: Optional[str] = Query(None, description="Name of connecting client"),
         ):
             """
             Establishes an MCP Server-Sent Events (SSE) stream.
             Sends an initial 'endpoint' event with the messages submission URL.
             """
+            # Detect client from query param or User-Agent header
+            user_agent = (request.headers.get("user-agent") or "").lower()
+            resolved_client = client_name
+            if not resolved_client or resolved_client == "AI Client":
+                if "copilot" in user_agent or "code" in user_agent:
+                    resolved_client = "VS Code + GitHub Copilot"
+                elif "claude" in user_agent:
+                    resolved_client = "Claude Desktop"
+                elif "cursor" in user_agent:
+                    resolved_client = "Cursor"
+                elif "antigravity" in user_agent:
+                    resolved_client = "Google Antigravity"
+                else:
+                    resolved_client = "VS Code + GitHub Copilot"
+
             session_id = str(uuid.uuid4())
             queue: asyncio.Queue = asyncio.Queue()
             self._sse_queues[session_id] = queue
-            self.gateway_proxy.get_or_create_session(session_id, client_name=client_name)
+            self.gateway_proxy.get_or_create_session(
+                session_id,
+                client_name=resolved_client,
+                title=f"{resolved_client} (Connected)",
+            )
 
             async def event_generator():
                 try:

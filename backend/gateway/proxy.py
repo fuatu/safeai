@@ -52,14 +52,28 @@ class GatewayProxy:
         self.default_language = default_language
         self.active_sessions: Dict[str, SessionRecord] = {}
 
-    def get_or_create_session(self, session_id: Optional[str] = None, client_name: str = "AI Client") -> SessionRecord:
+    def get_or_create_session(
+        self,
+        session_id: Optional[str] = None,
+        client_name: str = "AI Client",
+        title: Optional[str] = None,
+    ) -> SessionRecord:
         """Retrieves or initializes a session record."""
         sid = session_id or str(uuid.uuid4())
         existing = self.audit_store.get_session_by_id(sid)
         if existing:
+            if existing.client_name in ("AI Client", "AI Client...") and client_name != "AI Client":
+                existing.client_name = client_name
+                if not existing.title or "AI Client" in existing.title:
+                    existing.title = title or f"{client_name} (Connected)"
+                self.audit_store.update_session(existing)
             return existing
 
-        new_sess = SessionRecord(id=sid, client_name=client_name)
+        new_sess = SessionRecord(
+            id=sid,
+            client_name=client_name,
+            title=title or f"{client_name} (Connected)",
+        )
         self.audit_store.create_session(new_sess)
         self.active_sessions[sid] = new_sess
         return new_sess
@@ -90,6 +104,28 @@ class GatewayProxy:
 
         # 1. MCP Handshake & Protocol Methods
         if method == "initialize":
+            client_info = params.get("clientInfo") or {}
+            client_info_name = client_info.get("name", "")
+            if client_info_name and session_id:
+                sess = self.audit_store.get_session_by_id(session_id)
+                if sess:
+                    lower_name = client_info_name.lower()
+                    if "visual studio code" in lower_name or "code" in lower_name or "copilot" in lower_name:
+                        detected_client = "VS Code + GitHub Copilot"
+                    elif "claude" in lower_name:
+                        detected_client = "Claude Desktop"
+                    elif "cursor" in lower_name:
+                        detected_client = "Cursor"
+                    elif "antigravity" in lower_name:
+                        detected_client = "Google Antigravity"
+                    else:
+                        detected_client = client_info_name
+
+                    sess.client_name = detected_client
+                    if not sess.title or "AI Client" in sess.title or "Connected" in sess.title:
+                        sess.title = f"{detected_client} (Connected)"
+                    self.audit_store.update_session(sess)
+
             return {
                 "jsonrpc": "2.0",
                 "id": rpc_id,
@@ -278,6 +314,23 @@ class GatewayProxy:
             user_decision_by="AUTO_POLICY" if assessment.risk_score < effective_threshold else None,
         )
         self.audit_store.log_action(action_log)
+
+        # Update session title dynamically based on the tool and action
+        action_count = session.total_actions + 1
+        tool_label = tool_name
+        if tool_name == "bash":
+            cmd = sanitized_arguments.get("command", "")
+            cmd_snippet = (cmd[:28] + "...") if len(cmd) > 28 else cmd
+            tool_label = f"bash ({cmd_snippet})" if cmd_snippet else "bash"
+        elif tool_name == "read_file":
+            fpath = sanitized_arguments.get("file_path", "")
+            fname = fpath.split("/")[-1] if "/" in fpath else fpath
+            tool_label = f"Read {fname}" if fname else "read_file"
+
+        session.title = f"{session.client_name}: {tool_label}"
+        if action_count > 1:
+            session.title += f" ({action_count} actions)"
+        self.audit_store.update_session(session)
 
         # 4. HITL Connection Hold Check (Req 4.1 - 4.5)
         decision = await self.hitl_broker.intercept_and_hold(

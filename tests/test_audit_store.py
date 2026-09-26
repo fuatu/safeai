@@ -162,3 +162,14 @@ def test_prune_low_disk_preserves_high_risk(temp_store):
     assert temp_store.get_action("act-high") is not None
     assert temp_store.get_action("act-manual") is not None
 
+
+def test_legacy_session_backfill_and_title(temp_store):
+    legacy = SessionRecord(id="legacy-001", client_name="AI Client")
+    temp_store.create_session(legacy)
+
+    sessions = temp_store.list_sessions()
+    target = next((s for s in sessions if s.id == "legacy-001"), None)
+    assert target is not None
+    assert target.client_name == "VS Code + GitHub Copilot"
+    assert "Connected" in target.title
+

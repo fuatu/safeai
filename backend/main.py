@@ -1,5 +1,6 @@
 """Main FastAPI application entrypoint for SafeAI Core."""
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -68,11 +69,43 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         default_language=config.active_language,
     )
 
-    # 6. Build FastAPI App
+    # 6. Automated Copilot Chat Ingestion Syncer
+    from backend.storage.copilot_sync import CopilotChatSyncer
+    copilot_syncer = CopilotChatSyncer(
+        audit_store=store,
+        dlp_masker=dlp,
+        ws_broadcast=ws_manager.broadcast,
+    )
+
+    # 7. Lifespan context manager for background watcher
+    @asynccontextmanager
+    async def lifespan(fastapi_app: FastAPI):
+        # Sync immediately on startup
+        try:
+            copilot_syncer.sync_latest()
+        except Exception:
+            pass
+
+        async def copilot_watch_loop():
+            while True:
+                try:
+                    await asyncio.sleep(4)
+                    copilot_syncer.sync_latest()
+                except asyncio.CancelledError:
+                    break
+                except Exception:
+                    pass
+
+        watch_task = asyncio.create_task(copilot_watch_loop())
+        yield
+        watch_task.cancel()
+
+    # 8. Build FastAPI App
     app = FastAPI(
         title="SafeAI Core Gateway",
         description="Local-first AI agent security governance proxy and plain-language explainer",
         version="1.0.0",
+        lifespan=lifespan,
     )
 
     # Permissive local CORS for dashboard Web Panel
@@ -88,7 +121,15 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
     app.include_router(mcp_router.router)
     app.include_router(openai_router.router)
     app.include_router(create_ws_router(ws_manager, hitl_broker))
-    app.include_router(create_api_router(store, hitl_broker, sec_engine, config))
+    app.include_router(
+        create_api_router(
+            store,
+            hitl_broker,
+            sec_engine,
+            config,
+            copilot_syncer=copilot_syncer,
+        )
+    )
 
     # Health check endpoint
     @app.get("/healthz")

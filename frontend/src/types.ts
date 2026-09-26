@@ -25,6 +25,7 @@ export interface SafeAISettings {
 export interface SessionRecord {
   id: string;
   client_name: string;
+  title?: string | null;
   started_at: string;
   ended_at: string | null;
   summary: string | null;

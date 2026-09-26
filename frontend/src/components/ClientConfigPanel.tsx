@@ -235,17 +235,45 @@ export const ClientConfigPanel: React.FC = () => {
               </ol>
             )}
             {selectedKey === 'copilot' && (
-              <ol className="list-decimal list-inside space-y-1 text-slate-400">
-                <li>
-                  In your project root in <strong>VS Code</strong>, create or open <code>.vscode/mcp.json</code>.
-                </li>
-                <li>
-                  Paste the JSON snippet above into <code>.vscode/mcp.json</code> (or click <strong>Download JSON</strong>).
-                </li>
-                <li>
-                  In VS Code Copilot Chat (Agent mode), Copilot will now run tool calls through SafeAI for real-time security screening and human approval!
-                </li>
-              </ol>
+              <div className="space-y-3">
+                <div className="text-slate-200 font-medium">How to add SafeAI to GitHub Copilot in VS Code:</div>
+
+                <div className="p-3.5 rounded-xl bg-blue-950/20 border border-blue-900/40 space-y-2">
+                  <div className="font-semibold text-cyan-400 flex items-center justify-between">
+                    <span>Option 1: Using the "Add MCP Server" QuickPick (Recommended)</span>
+                    <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-cyan-950 border border-cyan-800 text-cyan-300">Fastest</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300">
+                    In VS Code's <strong>"Choose the type of MCP server to add"</strong> popup:
+                  </p>
+                  <ol className="list-decimal list-inside space-y-1 text-slate-300 text-xs">
+                    <li>
+                      Select <strong className="text-white">HTTP (HTTP or Server-Sent Events)</strong> (option #2 in list).
+                    </li>
+                    <li>
+                      Server Name / ID: enter <code className="text-cyan-300 font-bold">safeai</code>.
+                    </li>
+                    <li>
+                      Server URL: enter <code className="text-cyan-300 font-bold">http://localhost:{port}/mcp</code>.
+                    </li>
+                  </ol>
+                  <div className="text-[11px] text-slate-400 pt-1 border-t border-blue-900/30">
+                    💡 <em>Alternative if selecting <strong>Command (stdio)</strong>:</em> Command: <code>npx</code> | Arguments: <code>-y mcp-remote http://localhost:{port}/mcp</code>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-[#0a0d14] border border-[#1f293d] space-y-2">
+                  <div className="font-semibold text-slate-300">Option 2: Direct Workspace File (.vscode/mcp.json)</div>
+                  <ol className="list-decimal list-inside space-y-1 text-slate-400 text-xs">
+                    <li>In your project workspace root, create or open <code className="text-slate-300">.vscode/mcp.json</code>.</li>
+                    <li>Paste the JSON snippet above (or click <strong>Download JSON</strong>).</li>
+                  </ol>
+                </div>
+
+                <p className="text-slate-400 text-[11px]">
+                  Once connected, Copilot Chat in Agent mode will run all tool calls through SafeAI for risk analysis and human authorization.
+                </p>
+              </div>
             )}
             {selectedKey === 'antigravity' && (
               <ol className="list-decimal list-inside space-y-1 text-slate-400">

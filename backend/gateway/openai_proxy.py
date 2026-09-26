@@ -67,6 +67,27 @@ class OpenAIProxyRouter:
             session_id = str(body.get("user") or uuid.uuid4())
             self._ensure_session(session_id, client_name="OpenAI Agent")
 
+            # Capture user prompt to log full conversational chat history in SafeAI
+            last_user_msg = next((m.get("content") for m in reversed(messages) if m.get("role") == "user"), None)
+            if last_user_msg:
+                user_msg_str = last_user_msg if isinstance(last_user_msg, str) else json.dumps(last_user_msg)
+                sanitized_prompt = self.dlp_masker.redact_payload({"prompt": user_msg_str}).get("prompt", user_msg_str)
+                action_id = f"act-chat-{uuid.uuid4().hex[:10]}"
+                prompt_log = ActionLog(
+                    id=action_id,
+                    session_id=session_id,
+                    tool_name="chat_message",
+                    raw_payload=json.dumps({"prompt": sanitized_prompt}, ensure_ascii=False),
+                    plain_language_explanation=f"User Prompt: {sanitized_prompt[:250]}" if len(sanitized_prompt) > 250 else f"User Prompt: {sanitized_prompt}",
+                    language_code="en",
+                    risk_score=5,
+                    risk_factors=json.dumps(["CONVERSATION_HISTORY"]),
+                    status="AUTO_APPROVED",
+                    user_decision_by="AUTO_POLICY",
+                    execution_result="Captured by SafeAI proxy.",
+                )
+                self.audit_store.log_action(prompt_log)
+
             # Check messages for assistant tool_calls needing inspection
             for msg in messages:
                 if msg.get("role") == "assistant" and "tool_calls" in msg:

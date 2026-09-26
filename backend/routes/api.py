@@ -30,8 +30,17 @@ def create_api_router(
     hitl_broker: HITLBroker,
     security_engine: SecurityEngine,
     current_config: SystemConfig,
+    copilot_syncer: Optional[Any] = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api")
+
+    @router.post("/copilot/sync")
+    def sync_copilot_chat() -> Dict[str, Any]:
+        """Scans local VS Code storage and synchronizes Copilot chat history."""
+        if not copilot_syncer:
+            return {"status": "not_configured", "synced_turns": 0}
+        count = copilot_syncer.sync_latest()
+        return {"status": "success", "synced_turns": count}
 
     # -------------------------------------------------------------
     # Approvals & HITL Management

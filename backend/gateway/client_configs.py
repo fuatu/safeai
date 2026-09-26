@@ -80,8 +80,9 @@ def get_all_client_configs(port: int = 8080, host: str = "localhost") -> Dict[st
             "id": "copilot",
             "name": "GitHub Copilot",
             "filename": "mcp.json",
-            "description": "Connect GitHub Copilot in VS Code via workspace .vscode/mcp.json governance.",
+            "description": "Connect GitHub Copilot in VS Code via workspace .vscode/mcp.json or the Add MCP Server wizard.",
             "target_paths": {
+                "ui_wizard": "VS Code -> Add MCP Server -> Select 'HTTP (HTTP or Server-Sent Events)'",
                 "workspace": ".vscode/mcp.json",
                 "user_settings": "VS Code Settings -> Extensions -> GitHub Copilot Chat -> MCP",
             },

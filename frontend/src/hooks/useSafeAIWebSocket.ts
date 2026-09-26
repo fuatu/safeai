@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { PendingApprovalEvent } from '../types';
 
+interface UseSafeAIWebSocketOptions {
+  onActionLogged?: (data: any) => void;
+}
+
 interface UseSafeAIWebSocketReturn {
   isConnected: boolean;
   pendingApprovals: PendingApprovalEvent[];
@@ -8,11 +12,16 @@ interface UseSafeAIWebSocketReturn {
   dismissApproval: (actionId: string) => void;
 }
 
-export function useSafeAIWebSocket(): UseSafeAIWebSocketReturn {
+export function useSafeAIWebSocket(options?: UseSafeAIWebSocketOptions): UseSafeAIWebSocketReturn {
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApprovalEvent[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
+  const onActionLoggedRef = useRef(options?.onActionLogged);
+
+  useEffect(() => {
+    onActionLoggedRef.current = options?.onActionLogged;
+  }, [options?.onActionLogged]);
 
   // Play audio chime using Web Audio API (Req 5.2: zero external asset dependency)
   const playAlertChime = useCallback(() => {
@@ -101,6 +110,8 @@ export function useSafeAIWebSocket(): UseSafeAIWebSocketReturn {
             triggerNotification(approval);
           } else if (data.type === 'APPROVAL_RESOLVED') {
             setPendingApprovals((prev) => prev.filter((p) => p.actionId !== data.actionId));
+          } else if (data.type === 'ACTION_LOGGED') {
+            onActionLoggedRef.current?.(data);
           }
         } catch (err) {
           console.error('Failed to parse WebSocket message:', err);

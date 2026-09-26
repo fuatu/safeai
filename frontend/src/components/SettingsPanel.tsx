@@ -312,6 +312,28 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onUpdate
           </div>
         </div>
 
+        {/* AI Client & MCP Tool Role Banner */}
+        <div className="p-3.5 rounded-xl bg-blue-950/20 border border-blue-900/40 flex items-start justify-between gap-3 text-xs">
+          <div className="flex items-start gap-2.5">
+            <Cpu className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <div className="font-semibold text-cyan-300">How MCP Tools Connect to AI Clients:</div>
+              <p className="text-slate-400 leading-relaxed text-[11px]">
+                SafeAI provides MCP tools (e.g. <code>bash</code>, <code>read_file</code>) to connected AI clients (GitHub Copilot, Claude Desktop, Cursor, Antigravity). When the AI agent requests tool execution, SafeAI screens it against these governance rules. Conversational chat happens inside your AI client.
+              </p>
+            </div>
+          </div>
+          {onNavigateToClients && (
+            <button
+              type="button"
+              onClick={onNavigateToClients}
+              className="shrink-0 text-[11px] font-semibold text-cyan-400 hover:text-cyan-300 px-2.5 py-1 rounded bg-[#0a0d14] border border-[#1f293d] hover:border-cyan-500/40 transition-colors"
+            >
+              View Client Guides &rarr;
+            </button>
+          )}
+        </div>
+
         {/* Add/Configure Tool Setting Form */}
         <form onSubmit={handleAddToolSetting} className="p-4 rounded-xl bg-[#0a0d14] border border-[#1f293d] space-y-4">
           <div className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">

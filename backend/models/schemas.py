@@ -15,6 +15,7 @@ class SessionRecord(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     client_name: str = Field(index=True)           # e.g., "Claude Desktop", "Antigravity", "Cursor"
+    title: Optional[str] = None                    # Human-readable title e.g. "VS Code + Copilot: Running build"
     started_at: datetime = Field(default_factory=utc_now, index=True)
     ended_at: Optional[datetime] = None
     summary: Optional[str] = None                  # Localized executive summary of actions performed

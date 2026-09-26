@@ -96,6 +96,7 @@ class CopilotChatSyncer:
     def parse_chat_session_file(self, file_path: Path) -> List[Dict[str, Any]]:
         """Parses VS Code incremental JSONL chat session log into structured conversation turns."""
         requests: List[Dict[str, Any]] = []
+        custom_title: Optional[str] = None
 
         try:
             with open(file_path, "r", encoding="utf-8") as f:
@@ -108,18 +109,47 @@ class CopilotChatSyncer:
                     k = item.get("k", [])
                     v = item.get("v")
 
-                    # New requests batch
-                    if kind == 2 and k == ["requests"] and isinstance(v, list):
-                        for r in v:
+                    # Custom session title set by user or Copilot
+                    if kind == 1 and k == ["customTitle"] and isinstance(v, str) and v.strip():
+                        custom_title = v.strip()
+
+                    # 1. Initial full state (kind 0)
+                    if kind == 0 and isinstance(v, dict):
+                        init_requests = v.get("requests", [])
+                        for r in init_requests:
                             req_id = r.get("requestId")
                             if not req_id:
                                 continue
                             msg = r.get("message", {}).get("text", "")
                             model = r.get("modelId", "copilot")
-                            ts = r.get("timestamp", int(time.time() * 1000))
+                            ts = r.get("timestamp", v.get("creationDate", int(time.time() * 1000)))
+                            resp_parts = []
+                            for resp in r.get("response", []):
+                                if isinstance(resp, dict):
+                                    val = resp.get("value")
+                                    if isinstance(val, str) and val.strip() and not val.strip().startswith("**"):
+                                        resp_parts.append(val)
+                                elif isinstance(resp, str) and resp.strip():
+                                    resp_parts.append(resp)
+                            requests.append({
+                                "id": req_id,
+                                "prompt": msg,
+                                "model": model,
+                                "timestamp": ts,
+                                "response_parts": resp_parts,
+                            })
 
+                    # 2. Incremental requests batch (kind 2, k == ["requests"])
+                    elif kind == 2 and k == ["requests"] and isinstance(v, list):
+                        for r in v:
+                            req_id = r.get("requestId")
+                            if not req_id:
+                                continue
                             existing = next((x for x in requests if x["id"] == req_id), None)
                             if not existing:
+                                msg = r.get("message", {}).get("text", "")
+                                model = r.get("modelId", "copilot")
+                                ts = r.get("timestamp", int(time.time() * 1000))
                                 requests.append({
                                     "id": req_id,
                                     "prompt": msg,
@@ -128,38 +158,36 @@ class CopilotChatSyncer:
                                     "response_parts": [],
                                 })
 
-                    # Incremental response chunks
-                    elif kind == 2 and len(k) == 3 and k[0] == "requests" and k[2] == "response" and isinstance(v, list):
+                    # 3. Incremental response chunks (kind 2, k == ["requests", idx, "response"])
+                    elif kind == 2 and isinstance(k, list) and len(k) == 3 and k[0] == "requests" and k[2] == "response" and isinstance(v, list):
                         idx = k[1]
                         if isinstance(idx, int) and 0 <= idx < len(requests):
                             for part in v:
-                                if isinstance(part, dict) and "value" in part and part["value"]:
-                                    requests[idx]["response_parts"].append(part["value"])
+                                if isinstance(part, dict):
+                                    val = part.get("value")
+                                    if isinstance(val, str) and val.strip() and not val.strip().startswith("**"):
+                                        requests[idx]["response_parts"].append(val)
+                                elif isinstance(part, str) and part.strip():
+                                    requests[idx]["response_parts"].append(part)
         except Exception:
             return []
 
         # Consolidate responses
         results = []
         for r in requests:
-            resp_text = ""
-            for p in r["response_parts"]:
-                # Filter out pure internal reasoning markers if final text exists
-                if not p.startswith("**Analyzing") and not p.startswith("**Exploring"):
-                    resp_text = p
-            if not resp_text and r["response_parts"]:
-                resp_text = r["response_parts"][-1]
-
+            resp_text = "\n".join(r["response_parts"]).strip()
             results.append({
                 "id": r["id"],
                 "prompt": r["prompt"],
-                "response": resp_text.strip(),
+                "response": resp_text,
                 "model": r["model"],
                 "timestamp": r["timestamp"],
+                "custom_title": custom_title,
             })
 
         return results
 
-    def sync_all(self, max_files: int = 15) -> int:
+    def sync_all(self, max_files: int = 25) -> int:
         """
         Scans recent VS Code Copilot chat files and imports any unlogged turns
         into SafeAI's persistent audit store, organizing each into a clearly
@@ -188,14 +216,17 @@ class CopilotChatSyncer:
 
             date_str = session_date.strftime("%b %d, %H:%M")
 
-            # Determine title from first meaningful prompt
-            first_prompt = turns[0]["prompt"].strip().replace("\n", " ") if turns else ""
-            if len(first_prompt) > 34:
-                prompt_snippet = first_prompt[:34] + "..."
+            # Determine title: prioritize custom_title, then prompt snippet
+            custom_title = turns[0].get("custom_title") if turns else None
+            if custom_title:
+                formatted_title = f'VS Code + Copilot: "{custom_title}" ({date_str})'
             else:
-                prompt_snippet = first_prompt or "Conversation"
-
-            formatted_title = f'VS Code + Copilot: "{prompt_snippet}" ({date_str})'
+                first_prompt = turns[0]["prompt"].strip().replace("\n", " ") if turns else ""
+                if len(first_prompt) > 34:
+                    prompt_snippet = first_prompt[:34] + "..."
+                else:
+                    prompt_snippet = first_prompt or "Conversation"
+                formatted_title = f'VS Code + Copilot: "{prompt_snippet}" ({date_str})'
 
             # Get or create target session
             target_session = self.audit_store.get_session_by_id(session_id)
@@ -208,8 +239,8 @@ class CopilotChatSyncer:
                 )
                 self.audit_store.create_session(target_session)
             else:
-                # Update title if it was generic or missing date
-                if not target_session.title or "Connected" in target_session.title or date_str not in target_session.title:
+                # Update title if it was generic, missing prompt/title, or placeholder
+                if not target_session.title or "Connected" in target_session.title or target_session.title.startswith("AI Client") or '"Copilot Chat"' in target_session.title:
                     target_session.title = formatted_title
                     target_session.client_name = "VS Code + GitHub Copilot"
                     self.audit_store.update_session(target_session)

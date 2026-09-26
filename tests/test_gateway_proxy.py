@@ -216,7 +216,7 @@ async def test_mcp_tool_conversational_language_switching(proxy_env):
         "params": {
             "name": "bash",
             "arguments": {
-                "command": "pytest tests/",
+                "command": "echo 'testleri calistir'",
                 "context": "Lütfen testleri çalıştır ve sonuçları göster",
             },
         },

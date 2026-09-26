@@ -3,23 +3,21 @@ import {
   ShieldCheck,
   Activity,
   Sliders,
-  History,
   Radio,
-  RefreshCw,
-  Terminal,
   Cpu,
-  MessageSquare,
+  Layers,
 } from 'lucide-react';
 import { useSafeAIWebSocket } from './hooks/useSafeAIWebSocket';
 import { ApprovalModal } from './components/ApprovalModal';
-import { SessionTimeline } from './components/SessionTimeline';
-import { SessionSummary } from './components/SessionSummary';
+import { SessionsPage } from './components/SessionsPage';
+import { SessionDetailView } from './components/SessionDetailView';
 import { SettingsPanel } from './components/SettingsPanel';
 import { ClientConfigPanel } from './components/ClientConfigPanel';
 import { ActionLog, SafeAISettings, SessionRecord } from './types';
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'timeline' | 'settings' | 'clients'>('timeline');
+  const [activeTab, setActiveTab] = useState<'sessions' | 'live' | 'settings' | 'clients'>('sessions');
+  const [isViewingDetail, setIsViewingDetail] = useState<boolean>(false);
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [actions, setActions] = useState<ActionLog[]>([]);
@@ -45,10 +43,10 @@ export const App: React.FC = () => {
     } catch {}
   };
 
-  // Fetch recent sessions (silent = true prevents unnecessary state reference churn)
+  // Fetch recent sessions (silent = true prevents unnecessary re-renders)
   const fetchSessions = async (silent = false) => {
     try {
-      const res = await fetch('/api/sessions');
+      const res = await fetch('/api/sessions?limit=100');
       if (res.ok) {
         const data: SessionRecord[] = await res.json();
         setSessions((prev) => {
@@ -83,7 +81,6 @@ export const App: React.FC = () => {
       if (res.ok) {
         const data: ActionLog[] = await res.json();
         setActions((prev) => {
-          // If actions are identical, keep existing reference so React does not re-render or reset scroll
           if (
             prev.length === data.length &&
             prev[0]?.id === data[0]?.id &&
@@ -102,7 +99,7 @@ export const App: React.FC = () => {
     }
   };
 
-  // WebSocket action listener for instant live events without full-page reloads
+  // WebSocket action listener for instant live events without page reloads
   const handleActionLogged = useCallback((evt: any) => {
     if (!evt.sessionId || evt.sessionId === selectedSessionId) {
       fetchActions(selectedSessionId, true);
@@ -121,19 +118,18 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     if (selectedSessionId) {
-      // Normal loading on initial session change
       fetchActions(selectedSessionId, false);
     }
   }, [selectedSessionId]);
 
-  // Gentle fallback background polling (silent, non-destructive to scroll position)
+  // Gentle fallback background polling (silent, non-destructive)
   useEffect(() => {
     const interval = setInterval(() => {
       if (selectedSessionId) {
         fetchActions(selectedSessionId, true);
       }
       fetchSessions(true);
-    }, 12000);
+    }, 15000);
     return () => clearInterval(interval);
   }, [selectedSessionId]);
 
@@ -163,11 +159,7 @@ export const App: React.FC = () => {
     } catch {}
   };
 
-  const selectedSession = sessions.find((s) => s.id === selectedSessionId) || null;
-  const totalActions = selectedSession ? selectedSession.total_actions : actions.length;
-  const blockedActions = selectedSession
-    ? selectedSession.blocked_actions
-    : actions.filter((a) => a.risk_score >= settings.approval_threshold || a.status === 'REJECTED').length;
+  const selectedSession = sessions.find((s) => s.id === selectedSessionId) || (sessions.length > 0 ? sessions[0] : null);
 
   return (
     <div className="min-h-screen bg-[#0a0d14] text-slate-100 flex flex-col font-sans">
@@ -207,19 +199,38 @@ export const App: React.FC = () => {
               <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/40 border border-cyan-800/50 text-xs font-mono">
                 <span className="w-2 h-2 rounded-full bg-cyan-400" />
                 <span className="text-cyan-300 truncate max-w-[200px]">
-                  {selectedSession?.client_name || sessions[0].client_name}
+                  {selectedSession?.client_name || 'VS Code + GitHub Copilot'}
                 </span>
               </div>
             )}
           </div>
 
-          {/* Navigation Tabs */}
+          {/* Main Navigation Tabs */}
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setActiveTab('timeline')}
+              onClick={() => {
+                setActiveTab('sessions');
+                setIsViewingDetail(false);
+              }}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-                activeTab === 'timeline'
+                activeTab === 'sessions'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-[#121824]'
+              }`}
+            >
+              <Layers className="w-4 h-4" /> Sessions & History
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('live');
+                if (sessions.length > 0 && !selectedSessionId) {
+                  setSelectedSessionId(sessions[0].id);
+                }
+              }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === 'live'
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-[#121824]'
               }`}
@@ -273,138 +284,103 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* Tab 1: Live Timeline & Monitor */}
-        {activeTab === 'timeline' && (
+        {/* Tab 1: Sessions Explorer & History (Paginated, Searchable, Ordered Newest-to-Oldest) */}
+        {activeTab === 'sessions' && (
+          <>
+            {isViewingDetail && selectedSession ? (
+              <SessionDetailView
+                session={selectedSession}
+                actions={actions}
+                isLoadingActions={isLoadingActions}
+                onBack={() => setIsViewingDetail(false)}
+                onRefresh={() => {
+                  fetchSessions(true);
+                  if (selectedSessionId) fetchActions(selectedSessionId, true);
+                }}
+                onSyncCopilot={handleSyncCopilot}
+                isSyncingCopilot={isSyncingCopilot}
+              />
+            ) : (
+              <SessionsPage
+                sessions={sessions}
+                onSelectSession={(id) => {
+                  setSelectedSessionId(id);
+                  setIsViewingDetail(true);
+                }}
+                onSyncCopilot={handleSyncCopilot}
+                isSyncingCopilot={isSyncingCopilot}
+              />
+            )}
+          </>
+        )}
+
+        {/* Tab 2: Live Activity / Active Monitor */}
+        {activeTab === 'live' && (
           <div className="space-y-6">
-            {/* Architecture Explainer Card */}
-            <div className="p-4 rounded-2xl bg-[#121824] border border-[#1f293d] flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="flex items-start md:items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-blue-500/10 text-cyan-400 shrink-0 mt-0.5 md:mt-0">
-                  <Cpu className="w-5 h-5" />
+            {/* Live Gateway Header Card */}
+            <div className="p-5 rounded-2xl bg-[#121824] border border-[#1f293d] flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
+              <div className="flex items-center gap-3.5">
+                <div className="p-3 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-cyan-400">
+                  <Activity className="w-6 h-6 animate-pulse" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-slate-200">
-                      AI Client Guard Mode:
-                    </span>
-                    <span className="text-[11px] px-2 py-0.5 rounded-full font-mono bg-emerald-950/60 border border-emerald-800 text-emerald-400">
-                      {selectedSession?.client_name || 'VS Code + GitHub Copilot'} Active
-                    </span>
+                    <span className="text-xs font-mono text-slate-400">Active Live Gateway Monitor</span>
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
                   </div>
-                  <p className="text-xs text-slate-400 mt-1">
-                    SafeAI is an action firewall. You chat with your AI inside <strong>VS Code Copilot, Claude Desktop, or Cursor</strong> as usual. SafeAI automatically intercepts, screens, and pauses <strong>executable tools</strong> (shell commands, file reads/writes) whenever risk exceeds your threshold.
-                  </p>
+                  <h3 className="text-base font-bold text-slate-100 mt-0.5">
+                    {selectedSession?.title || 'Monitoring Connected AI Agents'}
+                  </h3>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setActiveTab('clients')}
-                className="shrink-0 text-xs font-semibold text-cyan-400 hover:text-cyan-300 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0a0d14] border border-[#1f293d] hover:border-cyan-500/50 transition-colors self-start md:self-auto"
-              >
-                Connect Clients &rarr;
-              </button>
-            </div>
 
-            {/* Session Stats Summary Cards */}
-            <SessionSummary
-              session={selectedSession}
-              totalActions={totalActions}
-              blockedActions={blockedActions}
-            />
-
-            {/* Session Switcher & Timeline Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2">
-              <div className="flex items-center gap-3">
-                <h3 className="font-semibold text-base text-slate-100 flex items-center gap-2">
-                  <Terminal className="w-4 h-4 text-blue-400" /> Intercepted Invocations
-                </h3>
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => {
-                    fetchSessions();
-                    if (selectedSessionId) fetchActions(selectedSessionId);
+                    setActiveTab('sessions');
+                    setIsViewingDetail(false);
                   }}
-                  className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-[#121824] transition-colors"
-                  title="Refresh activity"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0a0d14] border border-[#1f293d] hover:border-cyan-500/50 text-cyan-400 text-xs font-semibold transition-colors"
                 >
-                  <RefreshCw className="w-3.5 h-3.5" />
+                  <Layers className="w-3.5 h-3.5" /> Browse All Sessions Directory &rarr;
                 </button>
-                <button
-                  type="button"
-                  onClick={handleSyncCopilot}
-                  disabled={isSyncingCopilot}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-950/40 hover:bg-purple-900/50 border border-purple-800/50 text-purple-300 text-xs font-semibold transition-colors"
-                  title="Scan & Sync VS Code Copilot Chat History"
-                >
-                  <MessageSquare className={`w-3.5 h-3.5 ${isSyncingCopilot ? 'animate-pulse text-cyan-300' : ''}`} />
-                  {isSyncingCopilot ? 'Syncing...' : 'Sync Copilot Chat'}
-                </button>
-              </div>
-
-              {/* Session Selector Dropdown */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400 font-mono flex items-center gap-1">
-                  <History className="w-3.5 h-3.5" /> Session:
-                </span>
-                <select
-                  value={selectedSessionId || ''}
-                  onChange={(e) => setSelectedSessionId(e.target.value)}
-                  className="px-3 py-1.5 text-xs rounded-xl bg-[#121824] border border-[#1f293d] text-slate-200 font-medium focus:outline-none focus:border-blue-500 max-w-sm truncate"
-                >
-                  {sessions.length === 0 ? (
-                    <option value="">No sessions recorded</option>
-                  ) : (
-                    sessions.map((s) => {
-                      const startDate = new Date(s.started_at);
-                      const dateStr = startDate.toLocaleDateString([], {
-                        month: 'short',
-                        day: 'numeric',
-                      });
-                      const timeStr = startDate.toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      });
-
-                      const sessionLabel = s.title
-                        ? `${s.title} (${dateStr}, ${timeStr})`
-                        : `${s.client_name} (${dateStr}, ${timeStr})`;
-
-                      return (
-                        <option key={s.id} value={s.id}>
-                          {sessionLabel}
-                        </option>
-                      );
-                    })
-                  )}
-                </select>
               </div>
             </div>
 
-            {/* Timeline Stream */}
-            <SessionTimeline
-              actions={actions}
-              isLoading={isLoadingActions}
-              session={selectedSession}
-            />
+            {selectedSession && (
+              <SessionDetailView
+                session={selectedSession}
+                actions={actions}
+                isLoadingActions={isLoadingActions}
+                onBack={() => {
+                  setActiveTab('sessions');
+                  setIsViewingDetail(false);
+                }}
+                onRefresh={() => {
+                  fetchSessions(true);
+                  if (selectedSessionId) fetchActions(selectedSessionId, true);
+                }}
+                onSyncCopilot={handleSyncCopilot}
+                isSyncingCopilot={isSyncingCopilot}
+              />
+            )}
           </div>
         )}
 
-        {/* Tab 2: Policy Settings */}
+        {/* Tab 3: Security & Governance Settings */}
         {activeTab === 'settings' && (
           <SettingsPanel
             settings={settings}
             onUpdateSettings={handleUpdateSettings}
-            onNavigateToClients={() => setActiveTab('clients')}
           />
         )}
 
-        {/* Tab 3: AI Client Connect Guides */}
-        {activeTab === 'clients' && (
-          <ClientConfigPanel />
-        )}
+        {/* Tab 4: AI Client Connect Hub */}
+        {activeTab === 'clients' && <ClientConfigPanel />}
       </main>
 
-      {/* Live Sub-100ms Approval Modal (Renders if any pending action exists) */}
+      {/* Human-in-the-Loop Modal for Pending Approvals */}
       {pendingApprovals.length > 0 && (
         <ApprovalModal
           approval={pendingApprovals[0]}

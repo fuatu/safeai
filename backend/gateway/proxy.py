@@ -5,6 +5,7 @@ import json
 import subprocess
 import time
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 import httpx
@@ -77,6 +78,71 @@ class GatewayProxy:
         self.audit_store.create_session(new_sess)
         self.active_sessions[sid] = new_sess
         return new_sess
+
+    def resolve_active_session_for_client(
+        self, client_name: str = "VS Code + GitHub Copilot"
+    ) -> SessionRecord:
+        """
+        Resolves or creates the single active session for an AI client,
+        preventing session fragmentation across repeated tool calls or SSE reconnects.
+        """
+        now = datetime.now(timezone.utc)
+
+        # 1. For VS Code / Copilot, bind directly to the active on-disk Copilot chat session
+        if "Copilot" in client_name:
+            try:
+                from backend.storage.copilot_sync import CopilotChatSyncer
+                syncer = CopilotChatSyncer(audit_store=self.audit_store)
+                latest_file = syncer.get_latest_chat_session_file()
+                if latest_file:
+                    target_id = f"copilot-{latest_file.stem[:18]}"
+                    existing = self.audit_store.get_session_by_id(target_id)
+                    turns = syncer.parse_chat_session_file(latest_file)
+                    custom_title = turns[0].get("custom_title") if turns else None
+                    first_p = turns[0]["prompt"].strip().replace("\n", " ") if turns else ""
+                    short_p = (first_p[:34] + "...") if len(first_p) > 34 else (first_p or "Copilot Chat")
+                    date_str = now.strftime("%b %d, %H:%M")
+                    nice_title = (
+                        f'VS Code + Copilot: "{custom_title}" ({date_str})'
+                        if custom_title
+                        else f'VS Code + Copilot: "{short_p}" ({date_str})'
+                    )
+
+                    if existing:
+                        if not existing.title or '"Copilot Chat"' in existing.title or "Connected" in existing.title:
+                            existing.title = nice_title
+                            self.audit_store.update_session(existing)
+                        return existing
+
+                    # Create session if not yet in DB
+                    new_sess = SessionRecord(
+                        id=target_id,
+                        client_name="VS Code + GitHub Copilot",
+                        title=nice_title,
+                        started_at=now,
+                    )
+                    return self.audit_store.create_session(new_sess)
+            except Exception:
+                pass
+
+        # 2. General active session reuse window (last 45 minutes)
+        recent_sessions = self.audit_store.list_sessions(limit=10)
+        for s in recent_sessions:
+            if s.client_name == client_name and not s.ended_at:
+                diff_seconds = (now - s.started_at).total_seconds()
+                if diff_seconds < 2700:  # 45 minutes activity window
+                    return s
+
+        # 3. Create fresh session if none active
+        new_id = f"sess-{uuid.uuid4().hex[:12]}"
+        date_str = now.strftime("%b %d, %H:%M")
+        new_session = SessionRecord(
+            id=new_id,
+            client_name=client_name,
+            title=f"{client_name} ({date_str})",
+            started_at=now,
+        )
+        return self.audit_store.create_session(new_session)
 
     def resolve_tool_setting(self, tool_name: str) -> Optional[ToolSetting]:
         """
@@ -327,10 +393,12 @@ class GatewayProxy:
             fname = fpath.split("/")[-1] if "/" in fpath else fpath
             tool_label = f"Read {fname}" if fname else "read_file"
 
-        session.title = f"{session.client_name}: {tool_label}"
-        if action_count > 1:
-            session.title += f" ({action_count} actions)"
-        self.audit_store.update_session(session)
+        # Update session title dynamically based on the tool only if not already meaningful with a prompt
+        if not session.title or "Connected" in session.title or session.title.startswith("AI Client"):
+            session.title = f"{session.client_name}: {tool_label}"
+            if action_count > 1:
+                session.title += f" ({action_count} actions)"
+            self.audit_store.update_session(session)
 
         # 4. HITL Connection Hold Check (Req 4.1 - 4.5)
         decision = await self.hitl_broker.intercept_and_hold(

@@ -3,7 +3,7 @@
 import json
 import os
 import shutil
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
@@ -53,6 +53,59 @@ class AuditStore:
                 conn.commit()
         except Exception:
             pass  # Already exists or table created with title
+        self._consolidate_fragmented_sessions()
+
+    def _consolidate_fragmented_sessions(self) -> None:
+        """
+        Consolidates fragmented tool sessions into their parent chat sessions
+        and removes orphaned empty sessions to keep the audit history clean and unified.
+        """
+        try:
+            with self.get_session() as session:
+                target_3cfc = session.get(SessionRecord, "copilot-3cfc5c90-32b4-474c")
+                if target_3cfc:
+                    actions_to_move = [
+                        "act-b458374992f8", "act-c2297095ca96", "act-28fece28f615",
+                        "act-4d1cbda28167", "act-4241c1e72d2c", "act-7b214b4ef48a", "act-ea885453ade7"
+                    ]
+                    for aid in actions_to_move:
+                        act = session.get(ActionLog, aid)
+                        if act and act.session_id != "copilot-3cfc5c90-32b4-474c":
+                            act.session_id = "copilot-3cfc5c90-32b4-474c"
+                            session.add(act)
+
+                all_sessions = list(session.exec(select(SessionRecord)).all())
+                now = datetime.now(timezone.utc)
+                for s in all_sessions:
+                    action_count = len(list(session.exec(select(ActionLog.id).where(ActionLog.session_id == s.id)).all()))
+                    st = s.started_at if s.started_at and s.started_at.tzinfo else (s.started_at.replace(tzinfo=timezone.utc) if s.started_at else now)
+                    age = (now - st).total_seconds()
+
+                    if action_count == 0 and age > 300:
+                        session.delete(s)
+                        continue
+
+                    if s.title and ("bash (" in s.title or "read_file" in s.title):
+                        matching = list(session.exec(
+                            select(SessionRecord)
+                            .where(SessionRecord.id.startswith("copilot-"))
+                            .where(SessionRecord.id != s.id)
+                        ).all())
+                        if matching:
+                            closest = min(matching, key=lambda p: abs((p.started_at - s.started_at).total_seconds()) if p.started_at and s.started_at else 999999)
+                            acts = list(session.exec(select(ActionLog).where(ActionLog.session_id == s.id)).all())
+                            for a in acts:
+                                a.session_id = closest.id
+                                session.add(a)
+                            session.delete(s)
+                            continue
+
+                    s.total_actions = action_count
+                    session.add(s)
+
+                session.commit()
+        except Exception:
+            pass
 
     def get_session(self) -> Session:
         """Returns a new database session with non-expiring attributes."""
@@ -88,33 +141,37 @@ class AuditStore:
         with self.get_session() as session:
             statement = select(SessionRecord).order_by(SessionRecord.started_at.desc()).limit(limit)
             records = list(session.exec(statement).all())
-            # Backfill legacy generic 'AI Client' records with informative names & titles
+            now = datetime.now(timezone.utc)
+            filtered = []
             updated = False
             for r in records:
                 if r.client_name in ("AI Client", "AI Client..."):
                     r.client_name = "VS Code + GitHub Copilot"
                     updated = True
-                date_str = r.started_at.strftime("%b %d, %H:%M") if r.started_at else ""
-                if r.title and "AI Client:" in r.title:
-                    r.title = r.title.replace("AI Client:", "VS Code + Copilot:")
-                    if date_str and date_str not in r.title:
-                        r.title += f" ({date_str})"
-                    session.add(r)
+
+                if not r.title:
+                    date_str = r.started_at.strftime("%b %d, %H:%M") if r.started_at else ""
+                    r.title = f"{r.client_name} (Connected · {date_str})" if date_str else f"{r.client_name} (Connected)"
                     updated = True
-                elif r.title and r.title.endswith("(Connected)") and date_str:
-                    r.title = f"{r.client_name} (Connected · {date_str})"
-                    session.add(r)
+
+                # Ensure total_actions matches actual action count
+                real_action_count = len(list(session.exec(select(ActionLog.id).where(ActionLog.session_id == r.id)).all()))
+                if r.total_actions != real_action_count:
+                    r.total_actions = real_action_count
                     updated = True
-                elif not r.title:
-                    if r.total_actions == 0:
-                        r.title = f"{r.client_name} (Connected · {date_str})" if date_str else f"{r.client_name} (Connected)"
-                    else:
-                        r.title = f"{r.client_name} ({r.total_actions} actions · {date_str})" if date_str else f"{r.client_name} ({r.total_actions} actions)"
-                    session.add(r)
-                    updated = True
+
+                # Skip empty dangling sessions with 0 actions older than 3 mins to keep directory clean
+                if r.total_actions == 0 and r.started_at:
+                    st = r.started_at if r.started_at.tzinfo else r.started_at.replace(tzinfo=timezone.utc)
+                    age_seconds = (now - st).total_seconds()
+                    if age_seconds > 180:
+                        continue
+
+                filtered.append(r)
+
             if updated:
                 session.commit()
-            return records
+            return filtered
 
     # ---------------------------------------------------------
     # ActionLog Operations

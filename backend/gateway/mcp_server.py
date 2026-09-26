@@ -18,6 +18,8 @@ class MCPServerRouter:
         self.gateway_proxy = gateway_proxy
         self.router = APIRouter()
         self._sse_queues: Dict[str, asyncio.Queue] = {}
+        self._connection_to_session: Dict[str, str] = {}
+        self._connection_to_client: Dict[str, str] = {}
         self._setup_routes()
 
     def _setup_routes(self) -> None:
@@ -45,19 +47,19 @@ class MCPServerRouter:
                 else:
                     resolved_client = "VS Code + GitHub Copilot"
 
-            session_id = str(uuid.uuid4())
+            transport_conn_id = str(uuid.uuid4())
             queue: asyncio.Queue = asyncio.Queue()
-            self._sse_queues[session_id] = queue
-            self.gateway_proxy.get_or_create_session(
-                session_id,
-                client_name=resolved_client,
-                title=f"{resolved_client} (Connected)",
-            )
+            self._sse_queues[transport_conn_id] = queue
+
+            # Find or bind the actual logical AI session for this connection
+            logical_session = self.gateway_proxy.resolve_active_session_for_client(resolved_client)
+            self._connection_to_session[transport_conn_id] = logical_session.id
+            self._connection_to_client[transport_conn_id] = resolved_client
 
             async def event_generator():
                 try:
                     # Initial endpoint event per MCP SSE spec
-                    endpoint_msg = f"/mcp/messages?sessionId={session_id}"
+                    endpoint_msg = f"/mcp/messages?sessionId={transport_conn_id}"
                     yield f"event: endpoint\ndata: {endpoint_msg}\n\n"
 
                     while True:
@@ -70,7 +72,9 @@ class MCPServerRouter:
                             # Ping keep-alive
                             yield ": ping\n\n"
                 finally:
-                    self._sse_queues.pop(session_id, None)
+                    self._sse_queues.pop(transport_conn_id, None)
+                    self._connection_to_session.pop(transport_conn_id, None)
+                    self._connection_to_client.pop(transport_conn_id, None)
 
             return StreamingResponse(
                 event_generator(),
@@ -94,13 +98,29 @@ class MCPServerRouter:
             except Exception:
                 raise HTTPException(status_code=400, detail="Invalid JSON body")
 
+            # Map the transport connection ID to the persistent logical AI session ID
+            resolved_client = self._connection_to_client.get(sessionId, "VS Code + GitHub Copilot")
+
+            # For tool calls from Copilot, dynamically re-validate to bind to the latest active chat session
+            if body.get("method") == "tools/call" and "Copilot" in resolved_client:
+                active_session = self.gateway_proxy.resolve_active_session_for_client(resolved_client)
+                logical_session_id = active_session.id
+                self._connection_to_session[sessionId] = logical_session_id
+            else:
+                logical_session_id = self._connection_to_session.get(sessionId)
+                if not logical_session_id:
+                    logical_session = self.gateway_proxy.resolve_active_session_for_client(resolved_client)
+                    logical_session_id = logical_session.id
+                    self._connection_to_session[sessionId] = logical_session_id
+
             response = await self.gateway_proxy.handle_mcp_request(
                 request_dict=body,
-                session_id=sessionId,
+                session_id=logical_session_id,
+                client_name=resolved_client,
                 active_language=lang,
             )
 
-            # If SSE queue exists for this session, push response to SSE stream
+            # If SSE queue exists for this transport connection, push response to SSE stream
             queue = self._sse_queues.get(sessionId)
             if queue:
                 await queue.put(response)
@@ -121,10 +141,30 @@ class MCPServerRouter:
             except Exception:
                 raise HTTPException(status_code=400, detail="Invalid JSON body")
 
+            user_agent = (request.headers.get("user-agent") or "").lower()
+            resolved_client = client_name
+            if not resolved_client or resolved_client == "AI Client":
+                if "copilot" in user_agent or "code" in user_agent:
+                    resolved_client = "VS Code + GitHub Copilot"
+                elif "claude" in user_agent:
+                    resolved_client = "Claude Desktop"
+                elif "cursor" in user_agent:
+                    resolved_client = "Cursor"
+                elif "antigravity" in user_agent:
+                    resolved_client = "Google Antigravity"
+                else:
+                    resolved_client = "VS Code + GitHub Copilot"
+
+            if not sessionId or "Copilot" in resolved_client:
+                logical_session = self.gateway_proxy.resolve_active_session_for_client(resolved_client)
+                target_session_id = logical_session.id
+            else:
+                target_session_id = sessionId
+
             response = await self.gateway_proxy.handle_mcp_request(
                 request_dict=body,
-                session_id=sessionId,
-                client_name=client_name,
+                session_id=target_session_id,
+                client_name=resolved_client,
                 active_language=lang,
             )
             return JSONResponse(response)

@@ -188,48 +188,57 @@ export const App: React.FC = () => {
     <div className="min-h-screen bg-[#0a0d14] text-slate-100 flex flex-col font-sans">
       {/* Top Navigation Bar */}
       <header className="sticky top-0 z-40 bg-[#0d121d]/90 backdrop-blur-md border-b border-[#1f293d]">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/20">
+        <div className="max-w-[1440px] mx-auto px-6 h-16 flex items-center justify-between gap-6">
+          <div className="flex items-center gap-3 sm:gap-3.5 flex-shrink-0">
+            {/* SafeAI Logo & Title Button (Returns to Sessions & History Initial Page) */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('sessions');
+                setIsViewingDetail(false);
+              }}
+              className="flex items-center gap-2.5 text-left group transition-all hover:opacity-90 focus:outline-none flex-shrink-0 cursor-pointer"
+              title="Return to Sessions & History"
+            >
+              <div className="p-2 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/20 group-hover:scale-105 transition-transform">
                 <ShieldCheck className="w-5 h-5" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h1 className="font-bold text-base tracking-tight text-white">SafeAI</h1>
+                  <h1 className="font-bold text-base tracking-tight text-white group-hover:text-blue-200 transition-colors">SafeAI</h1>
                   <span className="text-[10px] px-2 py-0.5 rounded font-mono font-semibold bg-blue-500/10 border border-blue-500/20 text-blue-400">
                     CORE GATEWAY
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-400 font-mono">Agent Security & Explainer Governance</p>
               </div>
-            </div>
+            </button>
 
-            {/* Connection Status Badge */}
-            <div className="hidden sm:flex items-center gap-2 ml-4 px-3 py-1 rounded-full bg-[#121824] border border-[#1f293d] text-xs font-mono">
+            {/* Connection Status Badge (moved closer to logo on the left) */}
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-[#121824] border border-[#1f293d] text-xs font-mono flex-shrink-0">
               <span
                 className={`w-2 h-2 rounded-full ${
                   isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'
                 }`}
               />
-              <span className="text-slate-300">
+              <span className="text-slate-300 whitespace-nowrap">
                 {isConnected ? 'LIVE WEBSOCKET' : 'CONNECTING...'}
               </span>
             </div>
 
-            {/* Active AI Client Badge */}
+            {/* Active AI Client Badge (with expanded width and no shrinkage) */}
             {sessions.length > 0 && (
-              <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/40 border border-cyan-800/50 text-xs font-mono">
+              <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/40 border border-cyan-800/50 text-xs font-mono flex-shrink-0">
                 <span className="w-2 h-2 rounded-full bg-cyan-400" />
-                <span className="text-cyan-300 truncate max-w-[200px]">
+                <span className="text-cyan-300 truncate max-w-[280px] font-medium">
                   {selectedSession?.client_name || 'VS Code + GitHub Copilot'}
                 </span>
               </div>
             )}
           </div>
 
-          {/* Main Navigation Tabs */}
-          <div className="flex items-center gap-2">
+          {/* Main Navigation Tabs with guaranteed left margin */}
+          <div className="flex items-center gap-2 flex-shrink-0 ml-6">
             <button
               type="button"
               onClick={() => {

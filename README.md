@@ -92,6 +92,26 @@ python scripts/generate_configs.py
 
 This creates ready-to-use configuration files inside the `client_configs/` directory.
 
+### 🏷️ Explicit Client Identification via URL (`?client_name=...`)
+
+SafeAI seamlessly isolates and manages multiple concurrent AI clients (GitHub Copilot, Google Antigravity, Claude Desktop, Cursor, Hermes, etc.) through a single local gateway. Because default MCP client libraries frequently identify themselves generically as `"mcp"` or `"mcp-client"` during JSON-RPC protocol negotiation, appending `?client_name=<ClientName>` to the MCP endpoint URL is the **standard and recommended way** to tell SafeAI which client is connecting.
+
+When provided, SafeAI automatically:
+- Identifies the connecting AI assistant and isolates its session in the dashboard.
+- Displays human-readable labels (e.g., `VS Code + GitHub Copilot`, `Google Antigravity IDE`, `Claude Desktop`) instead of a generic `"MCP Client"` tag.
+- Binds directly to IDE-specific active workspaces and chat transcripts (such as VS Code workspace storage or Antigravity brain sessions).
+
+| Endpoint Query Parameter | Identified Client in SafeAI Dashboard |
+| :--- | :--- |
+| `?client_name=GithubCopilot` | **VS Code + GitHub Copilot** |
+| `?client_name=antigravity` | **Google Antigravity IDE** |
+| `?client_name=ClaudeDesktop` | **Claude Desktop** |
+| `?client_name=Cursor` | **Cursor** |
+| `?client_name=HermesAgent` | **Hermes Agent** |
+| `?client_name=<CustomName>` | **<CustomName>** |
+
+---
+
 ### 1. Claude Desktop
 1. Open Claude Desktop Settings (`Settings` -> `Developer` -> `Edit Config`).
 2. Copy the contents of [`client_configs/claude_desktop_config.json`](file:///Users/fuatu/Projects/safeai/client_configs/claude_desktop_config.json):
@@ -100,7 +120,7 @@ This creates ready-to-use configuration files inside the `client_configs/` direc
   "mcpServers": {
     "safeai": {
       "command": "npx",
-      "args": ["-y", "mcp-remote", "http://localhost:8080/mcp"]
+      "args": ["-y", "mcp-remote", "http://localhost:8080/mcp?client_name=ClaudeDesktop"]
     }
   }
 }
@@ -115,8 +135,8 @@ You can add SafeAI to GitHub Copilot in VS Code in two ways:
 1. In VS Code, click **Add MCP Server** (from Copilot Chat or the Command Palette).
 2. Select **`HTTP (HTTP or Server-Sent Events)`** (the 2nd option in the menu).
 3. **Server name / ID**: enter `safeai`
-4. **Server URL**: enter `http://localhost:8080/mcp`
-*(Alternatively, if you prefer `Command (stdio)`: command `npx`, args `-y mcp-remote http://localhost:8080/mcp`)*.
+4. **Server URL**: enter `http://localhost:8080/mcp?client_name=GithubCopilot`
+*(Alternatively, if selecting `Command (stdio)`: command `npx`, args `-y mcp-remote http://localhost:8080/mcp?client_name=GithubCopilot`)*.
 
 #### Option B: Workspace `.vscode/mcp.json` File
 Alternatively, add SafeAI to your workspace `.vscode/mcp.json`:
@@ -125,7 +145,7 @@ Alternatively, add SafeAI to your workspace `.vscode/mcp.json`:
   "mcpServers": {
     "safeai": {
       "type": "sse",
-      "url": "http://localhost:8080/mcp",
+      "url": "http://localhost:8080/mcp?client_name=GithubCopilot",
       "description": "SafeAI Agent Guard & Explainer for GitHub Copilot"
     }
   }
@@ -140,15 +160,15 @@ Add SafeAI to your workspace `.agents/mcp_config.json` or global config:
   "mcpServers": {
     "safeai": {
       "type": "sse",
-      "url": "http://localhost:8080/mcp",
+      "url": "http://localhost:8080/mcp?client_name=antigravity",
       "description": "SafeAI Agent Guard & Explainer"
     }
   }
 }
 ```
 
-### 3. Cursor / Windsurf / OpenAI-compatible Agents
-- **MCP Server URL:** `http://localhost:8080/mcp`
+### 4. Cursor / Windsurf / OpenAI-compatible Agents
+- **MCP Server URL:** `http://localhost:8080/mcp?client_name=Cursor`
 - **OpenAI Proxy Base URL:** `http://localhost:8080/v1`
 - **API Key:** any string (e.g. `safeai-local-key`)
 

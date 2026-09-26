@@ -87,6 +87,20 @@ export const ClientConfigPanel: React.FC = () => {
         </div>
       </div>
 
+      {/* Client Name URL Identification Banner */}
+      <div className="p-4 rounded-xl bg-cyan-950/20 border border-cyan-800/40 flex items-start gap-3">
+        <Sparkles className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
+        <div className="text-xs space-y-1">
+          <div className="font-semibold text-cyan-200">
+            Explicit AI Client Identification via URL (<code className="text-cyan-400 font-mono">?client_name=...</code>)
+          </div>
+          <p className="text-slate-400 leading-relaxed">
+            SafeAI identifies and isolates connecting AI clients using the <code className="text-cyan-300 font-mono">?client_name=</code> parameter in the MCP endpoint URL (e.g.{' '}
+            <code className="text-cyan-300 font-mono">http://localhost:{port}/mcp?client_name=GithubCopilot</code>). Since default MCP client libraries report generic names (<code className="text-slate-300">"mcp"</code>), passing <code className="text-cyan-300 font-mono">?client_name=</code> guarantees your sessions and audit trails are correctly attributed and never grouped as a generic client.
+          </p>
+        </div>
+      </div>
+
       {/* Client Selector Pills */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {[
@@ -254,11 +268,11 @@ export const ClientConfigPanel: React.FC = () => {
                       Server Name / ID: enter <code className="text-cyan-300 font-bold">safeai</code>.
                     </li>
                     <li>
-                      Server URL: enter <code className="text-cyan-300 font-bold">http://localhost:{port}/mcp</code>.
+                      Server URL: enter <code className="text-cyan-300 font-bold">http://localhost:{port}/mcp?client_name=GithubCopilot</code>.
                     </li>
                   </ol>
                   <div className="text-[11px] text-slate-400 pt-1 border-t border-blue-900/30">
-                    💡 <em>Alternative if selecting <strong>Command (stdio)</strong>:</em> Command: <code>npx</code> | Arguments: <code>-y mcp-remote http://localhost:{port}/mcp</code>
+                    💡 <em>Alternative if selecting <strong>Command (stdio)</strong>:</em> Command: <code>npx</code> | Arguments: <code>-y mcp-remote http://localhost:{port}/mcp?client_name=GithubCopilot</code>
                   </div>
                 </div>
 
@@ -280,7 +294,7 @@ export const ClientConfigPanel: React.FC = () => {
                 <li>
                   Open or create <code>.agents/mcp_config.json</code> in your project root workspace.
                 </li>
-                <li>Paste the snippet above into the file.</li>
+                <li>Paste the snippet above into the file (includes <code>?client_name=antigravity</code>).</li>
                 <li>
                   Antigravity will automatically detect the SSE endpoint and route tool calls through
                   SafeAI.
@@ -295,7 +309,7 @@ export const ClientConfigPanel: React.FC = () => {
                 </li>
                 <li>
                   Add a new server with Type: <code>SSE</code> and URL:{' '}
-                  <code>http://localhost:{port}/mcp</code>.
+                  <code>http://localhost:{port}/mcp?client_name=Cursor</code>.
                 </li>
                 <li>
                   Optionally set OpenAI Base URL to <code>http://localhost:{port}/v1</code> to monitor
@@ -306,7 +320,7 @@ export const ClientConfigPanel: React.FC = () => {
             {selectedKey === 'generic' && (
               <ol className="list-decimal list-inside space-y-1 text-slate-400">
                 <li>
-                  Point any MCP client to <code>http://localhost:{port}/mcp</code> (SSE transport).
+                  Point any MCP client to <code>http://localhost:{port}/mcp?client_name=CustomAgent</code> (SSE transport).
                 </li>
                 <li>
                   Point any OpenAI-compatible agent (LangChain, AutoGen, CrewAI) to Base URL{' '}

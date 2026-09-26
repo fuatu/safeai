@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from backend.gateway.client_resolver import canonicalize_client_name
 from backend.gateway.proxy import GatewayProxy
 
 
@@ -27,45 +28,45 @@ class MCPServerRouter:
         client_name: Optional[str] = None,
         user_agent: str = "",
         body: Optional[Dict[str, Any]] = None,
+        existing_client: Optional[str] = None,
     ) -> str:
-        user_agent_lower = (user_agent or "").lower()
-        if client_name and client_name != "AI Client":
-            return "Hermes Agent" if "hermes" in client_name.lower() else client_name
+        # 1. Explicit client_name query param has top priority
+        if client_name:
+            canon = canonicalize_client_name(client_name)
+            if canon:
+                return canon
 
-        # Check clientInfo in JSON-RPC payload if available
+        # 2. If an existing client was already resolved and is specific, preserve it
+        if existing_client and existing_client not in ("MCP Client", "AI Client"):
+            return existing_client
+
+        # 3. Check clientInfo in JSON-RPC payload if available
         if body:
             client_info = (body.get("params") or {}).get("clientInfo") or {}
             c_name = client_info.get("name", "")
             if c_name:
-                c_name_lower = c_name.lower()
-                if "hermes" in c_name_lower:
-                    return "Hermes Agent"
-                if "antigravity" in c_name_lower:
-                    return "Google Antigravity IDE"
-                if "claude" in c_name_lower:
-                    return "Claude Desktop"
-                if "cursor" in c_name_lower:
-                    return "Cursor"
-                if "copilot" in c_name_lower or "code" in c_name_lower:
-                    return "VS Code + GitHub Copilot"
-                return c_name.title()
+                canon = canonicalize_client_name(c_name)
+                if canon:
+                    return canon
 
+        # 4. Check User-Agent headers
+        user_agent_lower = (user_agent or "").lower()
+        if "antigravity" in user_agent_lower or "gemini" in user_agent_lower:
+            return "Google Antigravity IDE"
+        if "copilot" in user_agent_lower or "code" in user_agent_lower or "vscode" in user_agent_lower:
+            return "VS Code + GitHub Copilot"
         if "hermes" in user_agent_lower:
             return "Hermes Agent"
-        if "antigravity" in user_agent_lower:
-            return "Google Antigravity IDE"
-        if "copilot" in user_agent_lower or "code" in user_agent_lower:
-            return "VS Code + GitHub Copilot"
         if "claude" in user_agent_lower:
             return "Claude Desktop"
-        if "cursor" in user_agent_lower:
+        if "cursor" in user_agent_lower or "windsurf" in user_agent_lower:
             return "Cursor"
 
-        # Python MCP clients without explicit IDE headers are local agent runners like Hermes
-        if "python" in user_agent_lower or "httpx" in user_agent_lower or "aiohttp" in user_agent_lower:
+        # Python / httpx clients without explicit headers are local agent runners like Hermes
+        if any(sig in user_agent_lower for sig in ("python", "httpx", "aiohttp", "urllib")):
             return "Hermes Agent"
 
-        return "MCP Client"
+        return existing_client or "MCP Client"
 
     def _setup_routes(self) -> None:
         @self.router.get("/mcp")
@@ -92,8 +93,10 @@ class MCPServerRouter:
 
             async def event_generator():
                 try:
-                    # Initial endpoint event per MCP SSE spec
-                    endpoint_msg = f"/mcp/messages?sessionId={transport_conn_id}"
+                    # Initial endpoint event per MCP SSE spec with client_name preserved
+                    import urllib.parse
+                    encoded_client = urllib.parse.quote(resolved_client)
+                    endpoint_msg = f"/mcp/messages?sessionId={transport_conn_id}&client_name={encoded_client}"
                     yield f"event: endpoint\ndata: {endpoint_msg}\n\n"
 
                     while True:
@@ -124,6 +127,7 @@ class MCPServerRouter:
         async def mcp_post_message(
             request: Request,
             sessionId: str = Query(..., description="Session ID returned by SSE endpoint"),
+            client_name: Optional[str] = Query(None, description="Active client name"),
             lang: Optional[str] = Query(None, description="Active language code"),
         ):
             """Receives client JSON-RPC messages and routes them through GatewayProxy."""
@@ -133,25 +137,27 @@ class MCPServerRouter:
                 raise HTTPException(status_code=400, detail="Invalid JSON body")
 
             user_agent = request.headers.get("user-agent") or ""
-            client_info_name = (body.get("params") or {}).get("clientInfo", {}).get("name")
-            if client_info_name:
-                resolved_client = self._resolve_client(client_info_name, user_agent, body=body)
-                self._connection_to_client[sessionId] = resolved_client
+            existing_client = self._connection_to_client.get(sessionId)
+            resolved_client = self._resolve_client(
+                client_name=client_name,
+                user_agent=user_agent,
+                body=body,
+                existing_client=existing_client,
+            )
+            self._connection_to_client[sessionId] = resolved_client
 
             # Map the transport connection ID to the persistent logical AI session ID
-            resolved_client = self._connection_to_client.get(sessionId) or self._resolve_client(None, user_agent, body=body)
+            logical_session_id = self._connection_to_session.get(sessionId)
+            if not logical_session_id:
+                logical_session = self.gateway_proxy.resolve_active_session_for_client(resolved_client)
+                logical_session_id = logical_session.id
+                self._connection_to_session[sessionId] = logical_session_id
 
             # For tool calls from Copilot or Antigravity, dynamically re-validate to bind to the latest active chat session
             if body.get("method") == "tools/call" and ("Copilot" in resolved_client or "Antigravity" in resolved_client):
                 active_session = self.gateway_proxy.resolve_active_session_for_client(resolved_client)
                 logical_session_id = active_session.id
                 self._connection_to_session[sessionId] = logical_session_id
-            else:
-                logical_session_id = self._connection_to_session.get(sessionId)
-                if not logical_session_id:
-                    logical_session = self.gateway_proxy.resolve_active_session_for_client(resolved_client)
-                    logical_session_id = logical_session.id
-                    self._connection_to_session[sessionId] = logical_session_id
 
             response = await self.gateway_proxy.handle_mcp_request(
                 request_dict=body,
@@ -172,7 +178,7 @@ class MCPServerRouter:
         async def mcp_direct_jsonrpc(
             request: Request,
             sessionId: Optional[str] = Query(None),
-            client_name: str = Query("AI Client"),
+            client_name: Optional[str] = Query(None, description="Client name query parameter"),
             lang: Optional[str] = Query(None),
         ):
             """Direct Streamable HTTP JSON-RPC endpoint for MCP clients."""
@@ -182,10 +188,16 @@ class MCPServerRouter:
                 raise HTTPException(status_code=400, detail="Invalid JSON body")
 
             user_agent = request.headers.get("user-agent") or ""
-            resolved_client = self._resolve_client(client_name, user_agent, body=body)
+            conn_key = request.headers.get("mcp-session-id") or sessionId or request.headers.get("x-session-id")
+            existing_client = self._connection_to_client.get(conn_key) if conn_key else None
+            resolved_client = self._resolve_client(
+                client_name=client_name,
+                user_agent=user_agent,
+                body=body,
+                existing_client=existing_client,
+            )
 
             # Separate session for distinct client connections to prevent cross-merging
-            conn_key = request.headers.get("mcp-session-id") or sessionId or request.headers.get("x-session-id")
             if conn_key and conn_key in self._connection_to_session:
                 target_session_id = self._connection_to_session[conn_key]
             else:

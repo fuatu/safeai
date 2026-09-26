@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from backend.explainer.engine import ExplainerEngine
 from backend.hitl.broker import DecisionStatus, HITLBroker
+from backend.gateway.client_resolver import canonicalize_client_name
 from backend.models.schemas import ActionLog, SessionRecord, ToolSetting
 from backend.security.dlp import DLPMasker
 from backend.security.engine import SecurityAssessment, SecurityEngine
@@ -86,10 +87,12 @@ class GatewayProxy:
         Resolves or creates the single active session for an AI client,
         preventing session fragmentation across repeated tool calls or SSE reconnects.
         """
+        canon_name = canonicalize_client_name(client_name) or client_name
+        c_lower = canon_name.lower()
         now = datetime.now(timezone.utc)
 
-        # 1. For Google Antigravity, bind directly to the active on-disk Antigravity transcript
-        if "Antigravity" in client_name:
+        # 1. Google Antigravity IDE
+        if "antigravity" in c_lower:
             try:
                 from backend.storage.antigravity_sync import AntigravityChatSyncer
                 syncer = AntigravityChatSyncer(audit_store=self.audit_store)
@@ -116,8 +119,23 @@ class GatewayProxy:
             except Exception:
                 pass
 
-        # 2. For VS Code / Copilot, bind directly to the active on-disk Copilot chat session
-        if "Copilot" in client_name:
+            # Fallback if no on-disk transcript yet
+            recent_sessions = self.audit_store.list_sessions(limit=10)
+            for s in recent_sessions:
+                if "Antigravity" in s.client_name and not s.ended_at:
+                    if (now - s.started_at).total_seconds() < 3600:
+                        return s
+            new_id = f"antigravity-{uuid.uuid4().hex[:12]}"
+            date_str = now.strftime("%b %d, %H:%M")
+            return self.audit_store.create_session(SessionRecord(
+                id=new_id,
+                client_name="Google Antigravity IDE",
+                title=f"Google Antigravity IDE ({date_str})",
+                started_at=now,
+            ))
+
+        # 2. VS Code / GitHub Copilot
+        if "copilot" in c_lower or "code" in c_lower:
             try:
                 from backend.storage.copilot_sync import CopilotChatSyncer
                 syncer = CopilotChatSyncer(audit_store=self.audit_store)
@@ -139,6 +157,7 @@ class GatewayProxy:
                     if existing:
                         if not existing.title or '"Copilot Chat"' in existing.title or "Connected" in existing.title:
                             existing.title = nice_title
+                            existing.client_name = "VS Code + GitHub Copilot"
                             self.audit_store.update_session(existing)
                         return existing
 
@@ -153,42 +172,84 @@ class GatewayProxy:
             except Exception:
                 pass
 
-        # 3. For Hermes Agent, maintain an isolated session
-        if "Hermes" in client_name:
+            # Fallback if no chat file on disk yet
+            recent_sessions = self.audit_store.list_sessions(limit=10)
+            for s in recent_sessions:
+                if "Copilot" in s.client_name and not s.ended_at:
+                    if (now - s.started_at).total_seconds() < 3600:
+                        return s
+            new_id = f"copilot-{uuid.uuid4().hex[:12]}"
+            date_str = now.strftime("%b %d, %H:%M")
+            return self.audit_store.create_session(SessionRecord(
+                id=new_id,
+                client_name="VS Code + GitHub Copilot",
+                title=f"VS Code + GitHub Copilot ({date_str})",
+                started_at=now,
+            ))
+
+        # 3. Hermes Agent
+        if "hermes" in c_lower:
             recent_sessions = self.audit_store.list_sessions(limit=10)
             for s in recent_sessions:
                 if "Hermes" in s.client_name and not s.ended_at:
-                    diff_seconds = (now - s.started_at).total_seconds()
-                    if diff_seconds < 3600:
+                    if (now - s.started_at).total_seconds() < 3600:
                         return s
             new_id = f"hermes-{uuid.uuid4().hex[:12]}"
             date_str = now.strftime("%b %d, %H:%M")
-            new_session = SessionRecord(
+            return self.audit_store.create_session(SessionRecord(
                 id=new_id,
                 client_name="Hermes Agent",
                 title=f"Hermes Agent ({date_str})",
                 started_at=now,
-            )
-            return self.audit_store.create_session(new_session)
+            ))
 
-        # 4. General active session reuse window (last 45 minutes)
+        # 4. Claude Desktop
+        if "claude" in c_lower:
+            recent_sessions = self.audit_store.list_sessions(limit=10)
+            for s in recent_sessions:
+                if "Claude" in s.client_name and not s.ended_at:
+                    if (now - s.started_at).total_seconds() < 3600:
+                        return s
+            new_id = f"claude-{uuid.uuid4().hex[:12]}"
+            date_str = now.strftime("%b %d, %H:%M")
+            return self.audit_store.create_session(SessionRecord(
+                id=new_id,
+                client_name="Claude Desktop",
+                title=f"Claude Desktop ({date_str})",
+                started_at=now,
+            ))
+
+        # 5. Cursor
+        if "cursor" in c_lower:
+            recent_sessions = self.audit_store.list_sessions(limit=10)
+            for s in recent_sessions:
+                if "Cursor" in s.client_name and not s.ended_at:
+                    if (now - s.started_at).total_seconds() < 3600:
+                        return s
+            new_id = f"cursor-{uuid.uuid4().hex[:12]}"
+            date_str = now.strftime("%b %d, %H:%M")
+            return self.audit_store.create_session(SessionRecord(
+                id=new_id,
+                client_name="Cursor",
+                title=f"Cursor ({date_str})",
+                started_at=now,
+            ))
+
+        # 6. General active session reuse window (last 45 minutes)
         recent_sessions = self.audit_store.list_sessions(limit=10)
         for s in recent_sessions:
-            if s.client_name == client_name and not s.ended_at:
-                diff_seconds = (now - s.started_at).total_seconds()
-                if diff_seconds < 2700:  # 45 minutes activity window
+            if s.client_name == canon_name and not s.ended_at:
+                if (now - s.started_at).total_seconds() < 2700:
                     return s
 
-        # 3. Create fresh session if none active
         new_id = f"sess-{uuid.uuid4().hex[:12]}"
         date_str = now.strftime("%b %d, %H:%M")
-        new_session = SessionRecord(
+        return self.audit_store.create_session(SessionRecord(
             id=new_id,
-            client_name=client_name,
-            title=f"{client_name} ({date_str})",
+            client_name=canon_name,
+            title=f"{canon_name} ({date_str})",
             started_at=now,
-        )
-        return self.audit_store.create_session(new_session)
+        ))
 
     def resolve_tool_setting(self, tool_name: str) -> Optional[ToolSetting]:
         """
@@ -218,24 +279,13 @@ class GatewayProxy:
         if method == "initialize":
             client_info = params.get("clientInfo") or {}
             client_info_name = client_info.get("name", "")
-            if client_info_name and session_id:
+            canon_client = canonicalize_client_name(client_info_name)
+            if canon_client and session_id:
                 sess = self.audit_store.get_session_by_id(session_id)
-                if sess:
-                    lower_name = client_info_name.lower()
-                    if "visual studio code" in lower_name or "code" in lower_name or "copilot" in lower_name:
-                        detected_client = "VS Code + GitHub Copilot"
-                    elif "claude" in lower_name:
-                        detected_client = "Claude Desktop"
-                    elif "cursor" in lower_name:
-                        detected_client = "Cursor"
-                    elif "antigravity" in lower_name:
-                        detected_client = "Google Antigravity"
-                    else:
-                        detected_client = client_info_name
-
-                    sess.client_name = detected_client
-                    if not sess.title or "AI Client" in sess.title or "Connected" in sess.title:
-                        sess.title = f"{detected_client} (Connected)"
+                if sess and sess.client_name in ("AI Client", "MCP Client"):
+                    sess.client_name = canon_client
+                    if not sess.title or "AI Client" in sess.title or "Connected" in sess.title or "MCP Client" in sess.title:
+                        sess.title = f"{canon_client} (Connected)"
                     self.audit_store.update_session(sess)
 
             return {

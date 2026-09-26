@@ -69,7 +69,7 @@ class AuditStore:
                     st = s.started_at if s.started_at and s.started_at.tzinfo else (s.started_at.replace(tzinfo=timezone.utc) if s.started_at else now)
                     age = (now - st).total_seconds()
 
-                    if action_count == 0 and age > 300:
+                    if action_count == 0 and (age > 120 or s.client_name in ("MCP Client", "mcp", "AI Client")):
                         session.delete(s)
                         continue
 
@@ -150,11 +150,15 @@ class AuditStore:
                     r.total_actions = real_action_count
                     updated = True
 
-                # Skip empty dangling connection stubs with 0 actions older than 3 mins to keep directory clean
+                # Filter out generic 0-action MCP client probes so they never clutter the UI
+                if r.total_actions == 0 and r.client_name in ("MCP Client", "mcp", "AI Client"):
+                    continue
+
+                # Skip empty dangling connection stubs with 0 actions older than 1 min to keep directory clean
                 if r.total_actions == 0 and r.started_at and ("(Connected" in (r.title or "")):
                     st = r.started_at if r.started_at.tzinfo else r.started_at.replace(tzinfo=timezone.utc)
                     age_seconds = (now - st).total_seconds()
-                    if age_seconds > 180:
+                    if age_seconds > 60:
                         continue
 
                 filtered.append(r)

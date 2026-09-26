@@ -4,7 +4,7 @@
       {
         "name": "safeai",
         "type": "sse",
-        "url": "http://localhost:8080/mcp"
+        "url": "http://localhost:8080/mcp?client_name=Cursor"
       }
     ]
   },

@@ -9,7 +9,7 @@ def get_claude_desktop_config(port: int = 8080, host: str = "localhost") -> Dict
         "mcpServers": {
             "safeai": {
                 "command": "npx",
-                "args": ["-y", "mcp-remote", f"http://{host}:{port}/mcp"],
+                "args": ["-y", "mcp-remote", f"http://{host}:{port}/mcp?client_name=ClaudeDesktop"],
             }
         }
     }
@@ -21,7 +21,7 @@ def get_antigravity_config(port: int = 8080, host: str = "localhost") -> Dict[st
         "mcpServers": {
             "safeai": {
                 "type": "sse",
-                "url": f"http://{host}:{port}/mcp",
+                "url": f"http://{host}:{port}/mcp?client_name=antigravity",
                 "description": "SafeAI Local Governance Gateway & Plain-Language Explainer",
             }
         }
@@ -36,7 +36,7 @@ def get_cursor_config(port: int = 8080, host: str = "localhost") -> Dict[str, An
                 {
                     "name": "safeai",
                     "type": "sse",
-                    "url": f"http://{host}:{port}/mcp",
+                    "url": f"http://{host}:{port}/mcp?client_name=Cursor",
                 }
             ]
         },
@@ -53,7 +53,7 @@ def get_copilot_config(port: int = 8080, host: str = "localhost") -> Dict[str, A
         "mcpServers": {
             "safeai": {
                 "type": "sse",
-                "url": f"http://{host}:{port}/mcp",
+                "url": f"http://{host}:{port}/mcp?client_name=GithubCopilot",
                 "description": "SafeAI Agent Guard & Explainer for GitHub Copilot",
             }
         }
@@ -74,7 +74,7 @@ def get_all_client_configs(port: int = 8080, host: str = "localhost") -> Dict[st
                 "linux": "~/.config/Claude/claude_desktop_config.json",
             },
             "config": get_claude_desktop_config(port=port, host=host),
-            "command_hint": f"npx -y mcp-remote http://{host}:{port}/mcp",
+            "command_hint": f"npx -y mcp-remote http://{host}:{port}/mcp?client_name=ClaudeDesktop",
         },
         "copilot": {
             "id": "copilot",
@@ -87,7 +87,7 @@ def get_all_client_configs(port: int = 8080, host: str = "localhost") -> Dict[st
                 "user_settings": "VS Code Settings -> Extensions -> GitHub Copilot Chat -> MCP",
             },
             "config": get_copilot_config(port=port, host=host),
-            "command_hint": f"Endpoint: http://{host}:{port}/mcp",
+            "command_hint": f"Endpoint: http://{host}:{port}/mcp?client_name=GithubCopilot",
         },
         "antigravity": {
             "id": "antigravity",
@@ -99,7 +99,7 @@ def get_all_client_configs(port: int = 8080, host: str = "localhost") -> Dict[st
                 "global": "~/.gemini/antigravity-ide/mcp_config.json",
             },
             "config": get_antigravity_config(port=port, host=host),
-            "command_hint": f"Endpoint: http://{host}:{port}/mcp",
+            "command_hint": f"Endpoint: http://{host}:{port}/mcp?client_name=antigravity",
         },
         "cursor": {
             "id": "cursor",
@@ -111,21 +111,21 @@ def get_all_client_configs(port: int = 8080, host: str = "localhost") -> Dict[st
                 "windsurf_settings": "Windsurf Settings -> Cascade -> MCP Plugins",
             },
             "config": get_cursor_config(port=port, host=host),
-            "command_hint": f"SSE: http://{host}:{port}/mcp | Base URL: http://{host}:{port}/v1",
+            "command_hint": f"SSE: http://{host}:{port}/mcp?client_name=Cursor | Base URL: http://{host}:{port}/v1",
         },
         "generic": {
             "id": "generic",
             "name": "Generic MCP & OpenAI Proxy",
             "filename": "safeai_connection.json",
             "description": "Universal connection details for custom autonomous agents and tools.",
-            "mcp_url": f"http://{host}:{port}/mcp",
+            "mcp_url": f"http://{host}:{port}/mcp?client_name=CustomAgent",
             "openai_base_url": f"http://{host}:{port}/v1",
             "api_key": "safeai-local-key",
             "config": {
-                "mcp_endpoint": f"http://{host}:{port}/mcp",
+                "mcp_endpoint": f"http://{host}:{port}/mcp?client_name=CustomAgent",
                 "openai_endpoint": f"http://{host}:{port}/v1",
                 "auth_header": "Bearer safeai-local-key",
             },
-            "command_hint": f"curl -X POST http://{host}:{port}/mcp",
+            "command_hint": f"curl -X POST http://{host}:{port}/mcp?client_name=CustomAgent",
         },
     }

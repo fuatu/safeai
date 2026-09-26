@@ -5,7 +5,7 @@
       "args": [
         "-y",
         "mcp-remote",
-        "http://localhost:8080/mcp"
+        "http://localhost:8080/mcp?client_name=ClaudeDesktop"
       ]
     }
   }

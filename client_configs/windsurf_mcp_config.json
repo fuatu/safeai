@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "safeai": {
+      "serverUrl": "http://localhost:8080/mcp?client_name=Windsurf"
+    }
+  }
+}

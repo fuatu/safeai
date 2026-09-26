@@ -157,17 +157,22 @@ Alternatively, add SafeAI to your workspace `.vscode/mcp.json`:
 Copilot Chat in Agent mode will now route all tools through SafeAI!
 
 #### 🛡️ Enforcing SafeAI (Preventing Copilot Terminal Bypass)
-Because VS Code provides built-in terminal tools (`#terminal` / `runInTerminal`), Copilot Chat might occasionally choose its native runner instead of the SafeAI MCP tool. To enforce 100% mediation through SafeAI, add an instruction file at `.github/copilot-instructions.md` in your repository:
+Because VS Code provides built-in terminal tools (`#terminal` / `runInTerminal`), Copilot Chat might occasionally choose its unmonitored native runner instead of the SafeAI MCP tool. To enforce 100% mediation through SafeAI, add the following policy rule to either:
+- **Workspace:** `.github/copilot-instructions.md`
+- **Global:** `~/.copilot/copilot-instructions.md`
 
 ```markdown
 # SafeAI Security & Execution Policy
 - For all terminal and shell commands, exclusively use the `safeai` MCP tools (`safeai/bash`).
-- Do not execute commands directly via unmonitored built-in terminal tools.
+- Do not execute commands directly via unmonitored built-in terminal tools (`#terminal` or `runInTerminal`).
+- For reading sensitive files or repository inspection, use `safeai/read_file` to ensure data loss prevention (DLP) masking is applied.
+- Even if prompted to use the native terminal, route through SafeAI so that all actions are AST-analyzed, risk-scored, and held for human approval if needed.
 ```
-*(You can also disable auto-execution for terminal tools in VS Code Settings under `chat.tools.autoApprove`).*
+
+*(Optional Defense-in-Depth: In VS Code `settings.json`, set `"chat.tools.autoApprove": false` to prevent unreviewed tool calls).*
 
 ### 3. Google Antigravity IDE
-Add SafeAI to your workspace `.agents/mcp_config.json` or global config:
+Add SafeAI to your workspace `.agents/mcp_config.json` or global config (`~/.gemini/antigravity-ide/mcp_config.json`):
 ```json
 {
   "mcpServers": {
@@ -201,10 +206,59 @@ Antigravity IDE includes a native `run_command` tool. To guarantee the agent can
    }
    ```
 
-### 4. Cursor / Windsurf / OpenAI-compatible Agents
-- **MCP Server URL:** `http://localhost:8080/mcp?client_name=Cursor`
+### 4. Cursor IDE
+You can connect Cursor IDE via the UI or by editing `.cursor/mcp.json`:
+
+1. **MCP Configuration (`.cursor/mcp.json` or `~/.cursor/mcp.json`):**
+   ```json
+   {
+     "mcpServers": {
+       "safeai": {
+         "url": "http://localhost:8080/mcp?client_name=Cursor"
+       }
+     }
+   }
+   ```
+   *(Or via Cursor UI: `Settings` &rarr; `Features` &rarr; `MCP` &rarr; `Add New MCP Server` &rarr; Name: `safeai`, Type: `SSE`, URL: `http://localhost:8080/mcp?client_name=Cursor`)*.
+
+2. **🛡️ Enforcing SafeAI (Preventing Native Terminal Bypass):**
+   Add this policy to `.cursorrules` or `.cursor/rules/safeai.mdc` (or in Cursor Settings &rarr; *General* &rarr; *Rules for AI*):
+   ```markdown
+   # SafeAI Security & Execution Policy
+   - For all shell commands, scripts, and terminal execution, exclusively use the `safeai` MCP tool (`safeai/bash`).
+   - Never run commands directly in unmonitored native terminal sessions (`execute_command` or background terminal).
+   - All command executions must be routed through SafeAI to undergo AST syntax validation, risk evaluation, and human authorization.
+   ```
+
+### 5. Windsurf (Codeium Cascade)
+Connect Codeium Windsurf via its MCP configuration or Cascade settings:
+
+1. **MCP Configuration (`~/.codeium/windsurf/mcp_config.json`):**
+   ```json
+   {
+     "mcpServers": {
+       "safeai": {
+         "serverUrl": "http://localhost:8080/mcp?client_name=Windsurf"
+       }
+     }
+   }
+   ```
+   *(Or in Windsurf: `Settings` &rarr; `Cascade` &rarr; `MCP Plugins`)*.
+
+2. **🛡️ Enforcing SafeAI (Preventing Cascade Terminal Bypass):**
+   Add this rule to `.windsurfrules` in your project root (or `~/.codeium/windsurf/memories/global_rules.md`):
+   ```markdown
+   # SafeAI Security & Execution Policy
+   - For all terminal and shell commands, exclusively use the `safeai` MCP tools (`safeai/bash`).
+   - Do not execute commands directly via unmonitored Cascade terminal tools.
+   - Route all command-line operations through SafeAI so that every command is inspected by AST analysis, risk-scored, and subjected to Human-in-the-Loop policies.
+   ```
+
+### 6. Universal OpenAI-compatible Agents (LangChain, AutoGen, CrewAI)
+- **MCP Server URL:** `http://localhost:8080/mcp?client_name=CustomAgent`
 - **OpenAI Proxy Base URL:** `http://localhost:8080/v1`
 - **API Key:** any string (e.g. `safeai-local-key`)
+- Direct LLM tool invocations and completions route through SafeAI's transparent reverse proxy for real-time DLP and risk evaluation.
 
 ---
 
@@ -229,7 +283,8 @@ When you open **http://localhost:8080**, the top navigation gives you access to 
 - **Clean Database Records (Start Fresh):** Purge historical session logs and action audit records with one click to start fresh while optionally preserving your customized security policies and tool settings.
 
 ### 3. AI Client Connect Tab
-- **One-Click Configurations:** Interactive setup guides, copyable JSON snippets, and direct download buttons for **GitHub Copilot (VS Code)**, **Claude Desktop**, **Google Antigravity IDE**, and **Cursor / Windsurf**.
+- **One-Click Configurations:** Interactive setup guides, copyable JSON snippets, and direct download buttons for **GitHub Copilot (VS Code)**, **Google Antigravity IDE**, **Cursor**, **Windsurf**, and **Claude Desktop**.
+- **🛡️ Governance & Bypass Prevention Rule Cards:** Ready-to-copy instruction rules (`.copilot-instructions.md`, `GEMINI.md`, `.cursorrules`, `.windsurfrules`) to enforce 100% tool mediation and prevent agents from using unmonitored native terminal runners.
 - **Configurable Port:** Adjust your gateway port on the fly to generate custom configuration snippets.
 
 ---

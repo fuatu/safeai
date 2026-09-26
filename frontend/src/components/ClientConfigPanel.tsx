@@ -11,12 +11,15 @@ import {
   Layers,
   Code2,
   FileCode,
+  ShieldAlert,
+  ShieldCheck,
+  Shield,
 } from 'lucide-react';
 import { ClientConfigItem, ClientConfigsMap } from '../types';
 
 export const ClientConfigPanel: React.FC = () => {
   const [configs, setConfigs] = useState<ClientConfigsMap | null>(null);
-  const [selectedKey, setSelectedKey] = useState<string>('claude');
+  const [selectedKey, setSelectedKey] = useState<string>('copilot');
   const [port, setPort] = useState<number>(8080);
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
 
@@ -68,7 +71,7 @@ export const ClientConfigPanel: React.FC = () => {
               AI Client Setup & Connect Guides <Sparkles className="w-4 h-4 text-cyan-400" />
             </h3>
             <p className="text-xs text-slate-400">
-              One-click configurations to connect Claude Desktop, Google Antigravity, Cursor, and custom agents.
+              One-click configurations and governance rules to connect GitHub Copilot, Google Antigravity, Cursor, Windsurf, and Claude.
             </p>
           </div>
         </div>
@@ -102,12 +105,13 @@ export const ClientConfigPanel: React.FC = () => {
       </div>
 
       {/* Client Selector Pills */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {[
-          { key: 'claude', name: 'Claude Desktop', desc: 'Anthropic Claude' },
           { key: 'copilot', name: 'GitHub Copilot', desc: 'VS Code & Agent Mode' },
           { key: 'antigravity', name: 'Google Antigravity', desc: 'Antigravity IDE' },
-          { key: 'cursor', name: 'Cursor / Windsurf', desc: 'IDE & Agent Proxy' },
+          { key: 'cursor', name: 'Cursor', desc: 'Cursor IDE & Rules' },
+          { key: 'windsurf', name: 'Windsurf', desc: 'Codeium Cascade' },
+          { key: 'claude', name: 'Claude Desktop', desc: 'Anthropic Claude' },
           { key: 'generic', name: 'Generic / Custom', desc: 'SSE & OpenAI API' },
         ].map((item) => (
           <button
@@ -195,7 +199,7 @@ export const ClientConfigPanel: React.FC = () => {
           {activeClient.target_paths && (
             <div className="space-y-2">
               <div className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
-                <FolderOpen className="w-4 h-4 text-amber-400" /> Configuration File Locations:
+                <FolderOpen className="w-4 h-4 text-cyan-400" /> Configuration File Locations:
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs font-mono">
                 {Object.entries(activeClient.target_paths).map(([osName, filePath]) => (
@@ -233,8 +237,105 @@ export const ClientConfigPanel: React.FC = () => {
             </pre>
           </div>
 
+          {/* Enforcement & Bypass Prevention Policy Rule */}
+          {activeClient.enforcement_rule && (
+            <div className="p-5 rounded-2xl bg-gradient-to-b from-amber-950/20 via-[#0a0d14] to-[#0a0d14] border border-amber-900/40 space-y-4 shadow-lg shadow-amber-950/10">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-900/30 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 shadow-sm">
+                    <ShieldAlert className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h5 className="font-semibold text-xs sm:text-sm text-amber-200 flex items-center gap-2">
+                      🛡️ {activeClient.enforcement_rule.title}
+                    </h5>
+                    <p className="text-[11px] text-slate-400">
+                      {activeClient.enforcement_rule.description}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleCopy(activeClient.enforcement_rule!.content, 'rule-content')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 text-amber-200 text-xs font-semibold transition-all shrink-0 active:scale-95"
+                >
+                  {copiedSection === 'rule-content' ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" /> Copied Rule!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" /> Copy Policy Rule
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Rule Target File Paths */}
+              {activeClient.enforcement_rule.rule_files && Object.keys(activeClient.enforcement_rule.rule_files).length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="text-[11px] font-medium text-slate-300 flex items-center gap-1.5">
+                    <FolderOpen className="w-3.5 h-3.5 text-amber-400" /> Recommended rule file locations (click to copy path):
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs font-mono">
+                    {Object.entries(activeClient.enforcement_rule.rule_files).map(([scope, filePath]) => (
+                      <div
+                        key={scope}
+                        onClick={() => handleCopy(filePath, `rule-path-${scope}`)}
+                        className="p-2.5 rounded-xl bg-[#0d111a] border border-[#1f293d] flex items-center justify-between gap-2 cursor-pointer hover:border-amber-600/40 transition-colors group"
+                      >
+                        <div className="truncate">
+                          <span className="text-[10px] uppercase font-semibold text-amber-400/90 mr-2">
+                            [{scope}]
+                          </span>
+                          <span className="text-slate-300 text-[11px]">{filePath}</span>
+                        </div>
+                        {copiedSection === `rule-path-${scope}` ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5 text-slate-600 group-hover:text-slate-400 shrink-0" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Formatted Markdown Content */}
+              <div className="space-y-1.5">
+                <div className="text-[11px] font-medium text-slate-400 flex items-center gap-1.5">
+                  <FileCode className="w-3.5 h-3.5 text-amber-400" /> Rule Content (Markdown):
+                </div>
+                <pre className="p-3.5 rounded-xl bg-[#06080d] border border-amber-900/30 text-xs font-mono text-amber-100/90 overflow-x-auto whitespace-pre-wrap leading-relaxed">
+                  {activeClient.enforcement_rule.content}
+                </pre>
+              </div>
+
+              {/* Optional Setting Hint */}
+              {activeClient.enforcement_rule.setting_hint && (
+                <div className="p-3 rounded-xl bg-[#0d111a] border border-[#1f293d] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div>
+                    <span className="text-slate-400 text-[11px]">
+                      Recommended defense-in-depth setting (<code className="text-slate-300">{activeClient.enforcement_rule.setting_hint.path}</code>):
+                    </span>
+                    <pre className="text-cyan-300 font-mono text-[11px] mt-1">
+                      {activeClient.enforcement_rule.setting_hint.snippet}
+                    </pre>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(activeClient.enforcement_rule!.setting_hint!.snippet, 'setting-hint')}
+                    className="self-start sm:self-center px-2.5 py-1.5 rounded-lg bg-[#161d2b] hover:bg-[#1e2738] border border-slate-700 text-slate-300 text-[11px] font-mono shrink-0 transition-colors"
+                  >
+                    {copiedSection === 'setting-hint' ? 'Copied!' : 'Copy Setting'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Step-by-Step Setup Guide */}
-          <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-800 space-y-2 text-xs text-slate-300">
+          <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-800 space-y-3 text-xs text-slate-300">
             <div className="font-semibold text-slate-200">How to activate:</div>
             {selectedKey === 'claude' && (
               <ol className="list-decimal list-inside space-y-1 text-slate-400">
@@ -250,19 +351,19 @@ export const ClientConfigPanel: React.FC = () => {
             )}
             {selectedKey === 'copilot' && (
               <div className="space-y-3">
-                <div className="text-slate-200 font-medium">How to add SafeAI to GitHub Copilot in VS Code:</div>
+                <div className="text-slate-200 font-medium">Step-by-step setup for GitHub Copilot in VS Code:</div>
 
                 <div className="p-3.5 rounded-xl bg-blue-950/20 border border-blue-900/40 space-y-2">
                   <div className="font-semibold text-cyan-400 flex items-center justify-between">
-                    <span>Option 1: Using the "Add MCP Server" QuickPick (Recommended)</span>
-                    <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-cyan-950 border border-cyan-800 text-cyan-300">Fastest</span>
+                    <span>Step 1: Add SafeAI MCP Server</span>
+                    <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-cyan-950 border border-cyan-800 text-cyan-300">Recommended</span>
                   </div>
                   <p className="text-[11px] text-slate-300">
-                    In VS Code's <strong>"Choose the type of MCP server to add"</strong> popup:
+                    In VS Code Command Palette (<kbd className="font-mono text-cyan-300">Cmd+Shift+P</kbd> / <kbd className="font-mono text-cyan-300">Ctrl+Shift+P</kbd>):
                   </p>
                   <ol className="list-decimal list-inside space-y-1 text-slate-300 text-xs">
                     <li>
-                      Select <strong className="text-white">HTTP (HTTP or Server-Sent Events)</strong> (option #2 in list).
+                      Run <strong>"Add MCP Server"</strong> &rarr; Select <strong className="text-white">HTTP (HTTP or Server-Sent Events)</strong>.
                     </li>
                     <li>
                       Server Name / ID: enter <code className="text-cyan-300 font-bold">safeai</code>.
@@ -271,17 +372,23 @@ export const ClientConfigPanel: React.FC = () => {
                       Server URL: enter <code className="text-cyan-300 font-bold">http://localhost:{port}/mcp?client_name=GithubCopilot</code>.
                     </li>
                   </ol>
-                  <div className="text-[11px] text-slate-400 pt-1 border-t border-blue-900/30">
-                    💡 <em>Alternative if selecting <strong>Command (stdio)</strong>:</em> Command: <code>npx</code> | Arguments: <code>-y mcp-remote http://localhost:{port}/mcp?client_name=GithubCopilot</code>
-                  </div>
+                  <p className="text-[11px] text-slate-400 pt-1 border-t border-blue-900/30">
+                    <em>Alternative:</em> Paste the JSON snippet into <code className="text-slate-300">.vscode/mcp.json</code> in your project workspace root.
+                  </p>
                 </div>
 
-                <div className="p-3.5 rounded-xl bg-[#0a0d14] border border-[#1f293d] space-y-2">
-                  <div className="font-semibold text-slate-300">Option 2: Direct Workspace File (.vscode/mcp.json)</div>
-                  <ol className="list-decimal list-inside space-y-1 text-slate-400 text-xs">
-                    <li>In your project workspace root, create or open <code className="text-slate-300">.vscode/mcp.json</code>.</li>
-                    <li>Paste the JSON snippet above (or click <strong>Download JSON</strong>).</li>
-                  </ol>
+                <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-900/40 space-y-2">
+                  <div className="font-semibold text-amber-300 flex items-center justify-between">
+                    <span>Step 2: Add Enforcement Policy (Mandatory)</span>
+                    <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-amber-950 border border-amber-800 text-amber-300">Security</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300">
+                    To prevent Copilot Chat from using unmonitored built-in terminal tools (<code className="text-amber-200">#terminal</code> or <code className="text-amber-200">runInTerminal</code>), copy the <strong>SafeAI Security & Execution Policy</strong> above into:
+                  </p>
+                  <ul className="list-disc list-inside space-y-1 text-slate-400 text-xs">
+                    <li>Workspace: <code className="text-slate-200">.github/copilot-instructions.md</code></li>
+                    <li>Global: <code className="text-slate-200">~/.copilot/copilot-instructions.md</code></li>
+                  </ul>
                 </div>
 
                 <p className="text-slate-400 text-[11px]">
@@ -290,32 +397,75 @@ export const ClientConfigPanel: React.FC = () => {
               </div>
             )}
             {selectedKey === 'antigravity' && (
-              <ol className="list-decimal list-inside space-y-1 text-slate-400">
-                <li>
-                  Open or create <code>.agents/mcp_config.json</code> in your project root workspace.
-                </li>
-                <li>Paste the snippet above into the file (includes <code>?client_name=antigravity</code>).</li>
-                <li>
-                  Antigravity will automatically detect the SSE endpoint and route tool calls through
-                  SafeAI.
-                </li>
-              </ol>
+              <div className="space-y-3">
+                <div className="text-slate-200 font-medium">Step-by-step setup for Google Antigravity IDE:</div>
+                <div className="p-3.5 rounded-xl bg-blue-950/20 border border-blue-900/40 space-y-2">
+                  <div className="font-semibold text-cyan-400">Step 1: Add MCP Configuration</div>
+                  <ol className="list-decimal list-inside space-y-1 text-slate-300 text-xs">
+                    <li>
+                      Open or create <code className="text-slate-200">.agents/mcp_config.json</code> in your workspace root (or globally at <code className="text-slate-200">~/.gemini/antigravity-ide/mcp_config.json</code>).
+                    </li>
+                    <li>Paste the JSON snippet above (includes <code className="text-cyan-300 font-mono">?client_name=antigravity</code>).</li>
+                  </ol>
+                </div>
+                <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-900/40 space-y-2">
+                  <div className="font-semibold text-amber-300">Step 2: Enforce Mandatory SafeAI Routing</div>
+                  <p className="text-[11px] text-slate-300">
+                    Antigravity provides a native <code className="text-amber-200">run_command</code> tool. To guarantee the agent cannot bypass SafeAI, add the <strong>SafeAI Governance & Execution Policy</strong> above into:
+                  </p>
+                  <ul className="list-disc list-inside space-y-1 text-slate-400 text-xs">
+                    <li>Global: <code className="text-slate-200">~/.gemini/config/GEMINI.md</code> (recommended for all projects)</li>
+                    <li>Workspace: <code className="text-slate-200">.agents/rules/safeai_policy.md</code></li>
+                  </ul>
+                </div>
+              </div>
             )}
             {selectedKey === 'cursor' && (
-              <ol className="list-decimal list-inside space-y-1 text-slate-400">
-                <li>
-                  In <strong>Cursor</strong>, go to <code>Settings</code> &rarr; <code>Features</code>{' '}
-                  &rarr; <code>MCP</code>.
-                </li>
-                <li>
-                  Add a new server with Type: <code>SSE</code> and URL:{' '}
-                  <code>http://localhost:{port}/mcp?client_name=Cursor</code>.
-                </li>
-                <li>
-                  Optionally set OpenAI Base URL to <code>http://localhost:{port}/v1</code> to monitor
-                  direct LLM calls.
-                </li>
-              </ol>
+              <div className="space-y-3">
+                <div className="text-slate-200 font-medium">Step-by-step setup for Cursor IDE:</div>
+                <div className="p-3.5 rounded-xl bg-blue-950/20 border border-blue-900/40 space-y-2">
+                  <div className="font-semibold text-cyan-400">Step 1: Configure MCP Server</div>
+                  <ol className="list-decimal list-inside space-y-1 text-slate-300 text-xs">
+                    <li>
+                      In <strong>Cursor</strong>, go to <code>Settings</code> &rarr; <code>Features</code> &rarr; <code>MCP</code> &rarr; <strong>Add New MCP Server</strong>.
+                    </li>
+                    <li>
+                      Set Name: <code className="text-cyan-300 font-bold">safeai</code> | Type: <code className="text-cyan-300 font-bold">SSE</code> | URL: <code className="text-cyan-300 font-bold">http://localhost:{port}/mcp?client_name=Cursor</code>.
+                    </li>
+                    <li>
+                      Or add to <code className="text-slate-200">.cursor/mcp.json</code> in your project root.
+                    </li>
+                  </ol>
+                </div>
+                <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-900/40 space-y-2">
+                  <div className="font-semibold text-amber-300">Step 2: Add Cursor AI Rule</div>
+                  <p className="text-[11px] text-slate-300">
+                    Add the <strong>Cursor AI Security Policy</strong> above to <code className="text-slate-200">.cursorrules</code> or <code className="text-slate-200">.cursor/rules/safeai.mdc</code> so Cursor Agent routes all shell commands through SafeAI.
+                  </p>
+                </div>
+              </div>
+            )}
+            {selectedKey === 'windsurf' && (
+              <div className="space-y-3">
+                <div className="text-slate-200 font-medium">Step-by-step setup for Windsurf (Codeium Cascade):</div>
+                <div className="p-3.5 rounded-xl bg-blue-950/20 border border-blue-900/40 space-y-2">
+                  <div className="font-semibold text-cyan-400">Step 1: Configure MCP in Windsurf</div>
+                  <ol className="list-decimal list-inside space-y-1 text-slate-300 text-xs">
+                    <li>
+                      In <strong>Windsurf</strong>, open <code>Settings</code> &rarr; <code>Cascade</code> &rarr; <code>MCP Plugins</code>.
+                    </li>
+                    <li>
+                      Or paste the JSON snippet above into <code className="text-slate-200">~/.codeium/windsurf/mcp_config.json</code>.
+                    </li>
+                  </ol>
+                </div>
+                <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-900/40 space-y-2">
+                  <div className="font-semibold text-amber-300">Step 2: Add Windsurf Rules</div>
+                  <p className="text-[11px] text-slate-300">
+                    Add the <strong>Windsurf Security Policy</strong> above to <code className="text-slate-200">.windsurfrules</code> in your project root to force Cascade to execute tools via SafeAI.
+                  </p>
+                </div>
+              </div>
             )}
             {selectedKey === 'generic' && (
               <ol className="list-decimal list-inside space-y-1 text-slate-400">

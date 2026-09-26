@@ -160,11 +160,16 @@ async def test_client_configs_api(app_instance):
         assert "copilot" in data
         assert "antigravity" in data
         assert "cursor" in data
+        assert "windsurf" in data
         assert "generic" in data
         assert data["claude"]["filename"] == "claude_desktop_config.json"
         assert data["copilot"]["filename"] == "mcp.json"
         assert "safeai" in data["claude"]["config"]["mcpServers"]
         assert "safeai" in data["copilot"]["config"]["mcpServers"]
+        assert "enforcement_rule" in data["copilot"]
+        assert "enforcement_rule" in data["antigravity"]
+        assert "enforcement_rule" in data["cursor"]
+        assert "enforcement_rule" in data["windsurf"]
 
 
 @pytest.mark.asyncio

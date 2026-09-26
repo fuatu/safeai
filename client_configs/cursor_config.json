@@ -1,12 +1,8 @@
 {
-  "mcp": {
-    "servers": [
-      {
-        "name": "safeai",
-        "type": "sse",
-        "url": "http://localhost:8080/mcp?client_name=Cursor"
-      }
-    ]
+  "mcpServers": {
+    "safeai": {
+      "url": "http://localhost:8080/mcp?client_name=Cursor"
+    }
   },
   "openai_proxy": {
     "base_url": "http://localhost:8080/v1",

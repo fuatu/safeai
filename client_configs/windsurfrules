@@ -1,0 +1,4 @@
+# SafeAI Security & Execution Policy
+- For all terminal and shell commands, exclusively use the `safeai` MCP tools (`safeai/bash`).
+- Do not execute commands directly via unmonitored Cascade terminal tools.
+- Route all command-line operations through SafeAI so that every command is inspected by AST analysis, risk-scored, and subjected to Human-in-the-Loop policies.

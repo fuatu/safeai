@@ -69,6 +69,17 @@ export interface ToolSetting {
   description: string | null;
 }
 
+export interface EnforcementRule {
+  title: string;
+  description: string;
+  rule_files?: Record<string, string>;
+  content: string;
+  setting_hint?: {
+    path: string;
+    snippet: string;
+  };
+}
+
 export interface ClientConfigItem {
   id: string;
   name: string;
@@ -79,6 +90,7 @@ export interface ClientConfigItem {
   command_hint?: string;
   mcp_url?: string;
   openai_url?: string;
+  enforcement_rule?: EnforcementRule;
 }
 
 export type ClientConfigsMap = Record<string, ClientConfigItem>;

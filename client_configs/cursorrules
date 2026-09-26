@@ -1,0 +1,4 @@
+# SafeAI Security & Execution Policy
+- For all shell commands, scripts, and terminal execution, exclusively use the `safeai` MCP tool (`safeai/bash`).
+- Never run commands directly in unmonitored native terminal sessions (`execute_command` or background terminal).
+- All command executions must be routed through SafeAI to undergo AST syntax validation, risk evaluation, and human authorization.

@@ -1,4 +1,4 @@
-# 🛡️ SafeAI — The AI Agent Bodyguard ("For Dummies" Guide)
+# 🛡️ SafeAI - The AI Agent Bodyguard ("For Dummies" Guide)
 
 > **Think of SafeAI like an airport security checkpoint for your AI agents.**  
 > When Claude, Antigravity, Cursor, or ChatGPT wants to run a command on your computer, SafeAI steps in first, checks what it's trying to do, explains it to you in **plain human language** in your chosen language, and asks for your approval if it looks dangerous!
@@ -16,9 +16,9 @@ Autonomous AI coding agents are incredibly smart, but they can make catastrophic
 
 ```mermaid
 graph LR
-    Agent["🤖 AI Agent<br/>(Copilot, Claude, Cursor)"] -->|Calls Tool (bash/files)| SafeAI["🛡️ SafeAI Gateway<br/>(Scans Risk & Explains)"]
-    SafeAI -->|1. Safe Action?| Auto["⚡ Runs Automatically"]
-    SafeAI -->|2. Dangerous Action?| Human["🛑 Pauses & Asks You!<br/>Web Panel Sound Alert"]
+    Agent["🤖 AI Agent<br/>(Copilot, Claude, Cursor)"] -->|Calls Tool: bash, files| SafeAI["🛡️ SafeAI Gateway<br/>(Scans Risk & Explains)"]
+    SafeAI -->|Safe Action| Auto["⚡ Runs Automatically"]
+    SafeAI -->|Dangerous Action| Human["🛑 Pauses & Asks You!<br/>Web Panel Sound Alert"]
     Human -->|You Click Approve| Runs["✅ Runs on your PC"]
     Human -->|You Click Deny| Abort["⛔ Blocked in 100ms!"]
 ```
@@ -268,7 +268,7 @@ When you open **http://localhost:8080**, the top navigation gives you access to 
 
 ### 1. Live Activity Tab
 - **Connected Client Indicator:** See at a glance which AI client (e.g. `VS Code + GitHub Copilot Active`) is connected to the gateway.
-- **Standby Status:** When your AI client is connected and waiting for tool calls, the panel displays **"Agent Guard Active — Standing By"** with quick prompt suggestions.
+- **Standby Status:** When your AI client is connected and waiting for tool calls, the panel displays **"Agent Guard Active - Standing By"** with quick prompt suggestions.
 - **Intercepted Invocations:** Every tool call (terminal execution, file read/write) appears in real time via WebSockets with risk scoring, DLP-masked arguments, and plain-language explanation.
 - **Live Approval Popup:** When an action poses high risk (risk score ≥ your threshold), SafeAI halts execution with a sound alert and shows the approval modal. Click **Approve** to execute or **Deny** to abort.
 - **Session Switcher:** Easily switch between historical and active client sessions with clear client names, action summaries, and timestamps.
@@ -358,4 +358,4 @@ safeai/
 
 ---
 
-*SafeAI — Safe, transparent, and comprehensible AI autonomy on your machine.*
+*SafeAI - Safe, transparent, and comprehensible AI autonomy on your machine.*

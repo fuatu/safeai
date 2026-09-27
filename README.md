@@ -28,16 +28,15 @@ flowchart LR
 ### 🎬 Product Tour & Live Demo
 
 <p align="center">
-  <a href="docs/safeai_demo_narrated.mp4" title="Click to watch the SafeAI video walkthrough">
-    <img src="docs/images/live_activity_feed.png" alt="SafeAI Live Dashboard & Walkthrough" width="100%" style="border-radius: 12px; border: 1px solid #1f293d;" />
+  <a href="https://www.youtube.com/watch?v=0xovQZ9Dpqw" title="Watch SafeAI 90-Second Walkthrough on YouTube">
+    <img src="https://img.youtube.com/vi/0xovQZ9Dpqw/maxresdefault.jpg" alt="SafeAI Video Walkthrough - Watch on YouTube" width="100%" style="border-radius: 12px; border: 1px solid #1f293d;" />
   </a>
 </p>
 
 <p align="center">
-  🎬 <b>Watch the 90-Second Narrated Video Walkthrough:</b> 
-  <a href="docs/safeai_demo_narrated.mp4"><b>▶️ Watch MP4 Video</b></a> &nbsp;|&nbsp; 
-  <a href="docs/safeai_demo_narrated.webm"><b>▶️ Watch WebM Video</b></a><br/>
-  <em>Studio voiceover narration • Motion graphics HUD • Real-time exfiltration intercept & approval demo • Synced captions</em>
+  🎬 <b><a href="https://www.youtube.com/watch?v=0xovQZ9Dpqw">▶️ Watch the 90-Second Narrated Walkthrough on YouTube</a></b><br/>
+  <em>Studio voiceover narration • Motion graphics HUD • Real-time exfiltration intercept & approval demo • Synced captions</em><br/>
+  <small>Offline files: <a href="docs/safeai_demo_narrated.mp4">MP4 Video</a> &bull; <a href="docs/safeai_demo_narrated.webm">WebM Video</a></small>
 </p>
 
 

@@ -23,6 +23,11 @@ graph LR
     Human -->|You Click Deny| Abort["⛔ Blocked in 100ms!"]
 ```
 
+<p align="center">
+  <img src="docs/images/live_activity_feed.png" alt="SafeAI Live Cross-Session Activity Feed & Dashboard" width="100%" />
+</p>
+
+
 > [!IMPORTANT]
 > **SafeAI Works Seamlessly with Your Existing AI Tools (No API Keys Required):**  
 > SafeAI is designed to work with your tool's own built-in models (e.g. GitHub Copilot subscription, Claude, Cursor) with **zero API keys and zero endpoints to configure**:
@@ -264,25 +269,42 @@ Connect Codeium Windsurf via its MCP configuration or Cascade settings:
 
 ## 🖥️ How to Use the Web Panel (http://localhost:8080)
 
-When you open **http://localhost:8080**, the top navigation gives you access to three main areas:
+When you open **http://localhost:8080**, the top navigation gives you access to the main governance views:
 
 ### 1. Live Activity Tab
-- **Connected Client Indicator:** See at a glance which AI client (e.g. `VS Code + GitHub Copilot Active`) is connected to the gateway.
-- **Standby Status:** When your AI client is connected and waiting for tool calls, the panel displays **"Agent Guard Active - Standing By"** with quick prompt suggestions.
+<p align="center">
+  <img src="docs/images/live_activity_feed.png" alt="SafeAI Live Cross-Session Activity Feed" width="100%" />
+</p>
+
+- **Connected Client Indicator:** See at a glance which AI client (e.g. `VS Code + GitHub Copilot Active`, `Google Antigravity IDE`) is connected to the gateway.
+- **Real-Time Gateway Monitor:** Real-time stream of the last 50 tool invocations, AST security checks, and approvals across all sessions.
+- **Live Metrics:** Track Total Invocations, Blocked / Flagged calls, Safe Clearance Rate (%), and Active Sessions.
 - **Intercepted Invocations:** Every tool call (terminal execution, file read/write) appears in real time via WebSockets with risk scoring, DLP-masked arguments, and plain-language explanation.
 - **Live Approval Popup:** When an action poses high risk (risk score ≥ your threshold), SafeAI halts execution with a sound alert and shows the approval modal. Click **Approve** to execute or **Deny** to abort.
-- **Session Switcher:** Easily switch between historical and active client sessions with clear client names, action summaries, and timestamps.
 - **Export JSON:** Download clean, sanitized audit logs with permanent secret masking.
 
-### 2. Settings Tab
+### 2. Sessions & History Directory
+<p align="center">
+  <img src="docs/images/sessions_directory.png" alt="SafeAI AI Agent Sessions Directory" width="100%" />
+</p>
+
+- **Multi-Agent Session Audit:** Search, filter, and inspect past AI agent conversations, Copilot chat sessions, and guarded tool invocations ordered from most recent to oldest.
+- **Client Filtering:** Seamlessly filter sessions by client (`Google Antigravity IDE`, `VS Code + GitHub Copilot`, `Cursor`, etc.).
+- **Turn & Risk Breakdown:** View turn counts, safety badges (`Safe`, `Blocked`), and click **View Details** to inspect every prompt and tool call turn in that session.
+
+### 3. Settings Tab
+<p align="center">
+  <img src="docs/images/governance_settings.png" alt="SafeAI Governance & Explainer Policies Settings" width="100%" />
+</p>
+
 - **Human Approval Threshold:** Slider (0 - 100). Default is `50`. Lower values are more cautious; higher values are more permissive.
-- **Active Language:** Set to **"Auto-detect from conversation context & locale"** or lock to a specific language (Turkish, German, Spanish, French, English).
+- **Active Language (For Dummies Explainer):** Set to **"Auto-detect from conversation context & locale"** or lock to a specific language (Turkish, German, Spanish, French, English).
 - **Approval Timeout Window:** Slider (0 - 300 seconds). Set to **0 for ∞ Infinite Hold** (suspends until you explicitly decide).
-- **MCP Tool Governance:** Granular rules per tool (`bash`, `read_file`, `web_search`) or generic wildcard (`*`). You can adjust custom thresholds, toggle bypass, set timeouts, or disable tools entirely.
+- **MCP Tool Governance & Routing:** Granular rules per tool (`bash`, `read_file`, `web_search`) or generic wildcard (`*`). You can adjust custom thresholds, toggle bypass, set timeouts, or disable tools entirely.
 - **Deterministic Path & Command Rules:** Define strict blacklists/whitelists (e.g. deny access to `/secrets` or block commands containing `mkfs`).
 - **Clean Database Records (Start Fresh):** Purge historical session logs and action audit records with one click to start fresh while optionally preserving your customized security policies and tool settings.
 
-### 3. AI Client Connect Tab
+### 4. AI Client Connect Tab
 - **One-Click Configurations:** Interactive setup guides, copyable JSON snippets, and direct download buttons for **GitHub Copilot (VS Code)**, **Google Antigravity IDE**, **Cursor**, **Windsurf**, and **Claude Desktop**.
 - **🛡️ Governance & Bypass Prevention Rule Cards:** Ready-to-copy instruction rules (`.copilot-instructions.md`, `GEMINI.md`, `.cursorrules`, `.windsurfrules`) to enforce 100% tool mediation and prevent agents from using unmonitored native terminal runners.
 - **Configurable Port:** Adjust your gateway port on the fly to generate custom configuration snippets.

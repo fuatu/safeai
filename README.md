@@ -15,16 +15,27 @@ Autonomous AI coding agents are incredibly smart, but they can make catastrophic
 ### 💡 How SafeAI Protects You
 
 ```mermaid
-graph LR
-    Agent["🤖 AI Agent<br/>(Copilot, Claude, Cursor)"] -->|Calls Tool: bash, files| SafeAI["🛡️ SafeAI Gateway<br/>(Scans Risk & Explains)"]
-    SafeAI -->|Safe Action| Auto["⚡ Runs Automatically"]
-    SafeAI -->|Dangerous Action| Human["🛑 Pauses & Asks You!<br/>Web Panel Sound Alert"]
-    Human -->|You Click Approve| Runs["✅ Runs on your PC"]
-    Human -->|You Click Deny| Abort["⛔ Blocked in 100ms!"]
+flowchart LR
+    Agent["🤖 AI Agent<br>(Copilot, Claude, Cursor)"] -->|"Calls bash, file tools"| SafeAI["🛡️ SafeAI Gateway<br>(Scans Risk & Explains)"]
+    SafeAI -->|"Safe Action"| Auto["⚡ Runs Automatically"]
+    SafeAI -->|"Dangerous Action"| Human["🛑 Pauses & Alerts You<br>(Web Panel Sound Alert)"]
+    Human -->|"You Click Approve"| Runs["✅ Runs on your PC"]
+    Human -->|"You Click Deny"| Abort["⛔ Blocked in 100ms"]
 ```
 
+---
+
+### 🎬 Product Tour & Live Demo
+
 <p align="center">
-  <img src="docs/images/live_activity_feed.png" alt="SafeAI Live Cross-Session Activity Feed & Dashboard" width="100%" />
+  <a href="docs/safeai_demo_narrated.mp4" title="Click to watch the SafeAI video tutorial">
+    <img src="docs/images/live_activity_feed.png" alt="SafeAI Video Walkthrough - Click to Watch" width="100%" style="border-radius: 12px;" />
+  </a>
+</p>
+
+<p align="center">
+  🎬 <b><a href="docs/safeai_demo_narrated.mp4">▶️ Watch the 90-Second Narrated Walkthrough (docs/safeai_demo_narrated.mp4)</a></b><br/>
+  <em>Studio voiceover narration • Motion graphics HUD • Real-time exfiltration intercept & approval demo • Synced captions</em>
 </p>
 
 

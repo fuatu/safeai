@@ -103,3 +103,5 @@ tmp/
 temp/
 .kiro/
 .playwright-mcp/
+
+scripts/

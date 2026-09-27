@@ -1,5 +1,9 @@
 # 🛡️ SafeAI - The AI Agent Bodyguard ("For Dummies" Guide)
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Author: Fuat Ulugay](https://img.shields.io/badge/Author-Fuat%20Ulugay-blue)](https://www.linkedin.com/in/fuatulugay/)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2?logo=linkedin)](https://www.linkedin.com/in/fuatulugay/)
+
 > **Think of SafeAI like an airport security checkpoint for your AI agents.**  
 > When Claude, Antigravity, Cursor, or ChatGPT wants to run a command on your computer, SafeAI steps in first, checks what it's trying to do, explains it to you in **plain human language** in your chosen language, and asks for your approval if it looks dangerous!
 
@@ -389,6 +393,19 @@ safeai/
 ├── scripts/                  # One-click client configuration generator
 └── tests/                    # 45 automated pytest suites
 ```
+
+---
+
+## 👤 Author
+
+Developed with care by **Fuat Ulugay**  
+- **LinkedIn:** [Fuat Ulugay](https://www.linkedin.com/in/fuatulugay/)
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License** — a free and permissive open-source license that allows unrestricted use, modification, distribution, and commercial use while preserving author attribution and copyright notices. See the [LICENSE](LICENSE) file for details.
 
 ---
 

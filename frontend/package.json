@@ -2,6 +2,8 @@
   "name": "safeai-frontend",
   "private": true,
   "version": "1.0.0",
+  "author": "Fuat Ulugay (https://www.linkedin.com/in/fuatulugay/)",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",

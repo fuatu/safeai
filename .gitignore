@@ -97,9 +97,9 @@ logs/
 data/
 
 # ==========================================
-# Containers & Temporary Files
+# Containers, Temporary Files & Tool Artifacts
 # ==========================================
 tmp/
 temp/
-
-.playwright-mcp
+.kiro/
+.playwright-mcp/

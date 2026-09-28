@@ -62,34 +62,37 @@ flowchart LR
 
 ## 🚀 Quickstart: Get Running in 2 Minutes
 
-### Option 1: The Easiest Way (Docker) 🐳
+SafeAI runs directly on your machine as a lightweight, zero-latency local security gateway. Running natively gives SafeAI full, unhindered visibility into your real terminal environment, developer toolchain (Node, Python, Git, Brew), and workspace directories.
 
-If you have [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed, you can launch everything with one command:
+### ⚡ One-Command Start (Recommended)
+
+Simply run the startup script:
 
 ```bash
-docker compose -f docker/docker-compose.yml up --build
+./start.sh
 ```
 
-That's it! Open **http://localhost:8080** in your browser to see your dashboard.
+This automatically configures your Python virtual environment (`.venv`), installs requirements, ensures frontend assets are ready, and boots the SafeAI Core Gateway on **http://localhost:8080**.
 
 ---
 
-### Option 2: Running Locally (Without Docker) 💻
+### 💻 Manual Step-by-Step Setup
 
-If you prefer running it directly on your machine:
+If you prefer launching each component manually:
 
-#### Step 1: Start the Backend (Terminal 1)
+#### Step 1: Start the Backend Gateway (Terminal 1)
 ```bash
 # 1. Create a virtual environment & install requirements
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r backend/requirements.txt
 
-# 2. Start the gateway server
-uvicorn backend.main:app --host 0.0.0.0 --port 8080 --reload
+# 2. Start the gateway server (serves MCP API + Dashboard UI)
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 8080 --reload
 ```
 
-#### Step 2: Start the Web Dashboard (Terminal 2)
+#### Step 2: (Optional) Frontend Development Server (Terminal 2)
+*(Note: If you run `./start.sh` or have built `frontend/dist`, the backend on port 8080 already serves the production dashboard directly).*
 ```bash
 # 1. Install frontend packages
 cd frontend
@@ -99,7 +102,7 @@ npm install
 npm run dev
 ```
 
-Open **http://localhost:5173** (or **http://localhost:8080** if built) in your web browser.
+Open **http://localhost:8080** (or **http://localhost:5173** for the hot-reloading dev frontend) in your web browser.
 
 ---
 
@@ -389,9 +392,9 @@ safeai/
 ├── frontend/                 # React 18 + Vite + Tailwind CSS Dashboard
 │   ├── src/components/       # Live Approval Modal, Timeline, Settings
 │   └── src/hooks/            # WebSocket connection hook
-├── docker/                   # Dockerfile & Docker Compose configs
+├── start.sh                  # One-command local gateway launcher
 ├── scripts/                  # One-click client configuration generator
-└── tests/                    # 45 automated pytest suites
+└── tests/                    # 80 automated pytest suites
 ```
 
 ---

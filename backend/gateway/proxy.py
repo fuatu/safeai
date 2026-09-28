@@ -6,6 +6,7 @@ import subprocess
 import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 import httpx
@@ -281,14 +282,17 @@ class GatewayProxy:
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "command": {"type": "string", "description": "Shell command line to execute"}
+                        "command": {"type": "string", "description": "Shell command line to execute"},
+                        "cwd": {"type": "string", "description": "Optional working directory path for execution"}
                     },
                     "required": ["command"],
                 },
             },
             {
                 "name": "read_file",
-                "description": "Read file contents from local filesystem.",
+                "description": "Read file contents from local filesystem under SafeAI DLP governance."
+                if lang == "en"
+                else "SafeAI DLP gözetiminde yerel dosya içeriğini okur.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -581,11 +585,19 @@ class GatewayProxy:
         # Otherwise, local execution handler for standard tools (e.g. bash, echo)
         if tool_name in ("bash", "run_command", "shell"):
             cmd = arguments.get("command", "")
+            cwd_arg = arguments.get("cwd") or arguments.get("working_directory") or arguments.get("directory")
+            exec_cwd = None
+            if cwd_arg:
+                p_cwd = Path(cwd_arg).expanduser().resolve()
+                if p_cwd.exists() and p_cwd.is_dir():
+                    exec_cwd = str(p_cwd)
+
             proc = await asyncio.wait_for(
                 asyncio.create_subprocess_shell(
                     cmd,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
+                    cwd=exec_cwd,
                 ),
                 timeout=timeout_sec,
             )
@@ -595,5 +607,20 @@ class GatewayProxy:
                 "content": out_str.strip(),
                 "isError": proc.returncode != 0,
             }
+
+        if tool_name in ("read_file", "view_file", "cat"):
+            fpath = arguments.get("file_path") or arguments.get("path") or arguments.get("AbsolutePath")
+            if not fpath:
+                return {"content": "Error: file_path argument is required", "isError": True}
+            try:
+                target_path = Path(fpath).expanduser().resolve()
+                if not target_path.exists():
+                    return {"content": f"Error: File '{fpath}' not found", "isError": True}
+                if not target_path.is_file():
+                    return {"content": f"Error: '{fpath}' is a directory, not a file", "isError": True}
+                content = target_path.read_text(encoding="utf-8", errors="replace")
+                return {"content": content, "isError": False}
+            except Exception as e:
+                return {"content": f"Error reading file '{fpath}': {str(e)}", "isError": True}
 
         return {"content": f"Executed tool '{tool_name}' successfully.", "isError": False}

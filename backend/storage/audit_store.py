@@ -17,7 +17,7 @@ class AuditStore:
 
     def __init__(self, db_path: Optional[str] = None):
         if db_path is None:
-            configured = os.environ.get("SAFEAI_DB_PATH", "/data/safeai.db")
+            configured = os.environ.get("SAFEAI_DB_PATH", "./data/safeai.db")
             # If default /data path is not writable or doesn't exist outside docker, fallback to ./data
             try:
                 parent = Path(configured).parent

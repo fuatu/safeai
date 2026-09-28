@@ -230,3 +230,55 @@ async def test_mcp_tool_conversational_language_switching(proxy_env):
     assert actions[0].language_code == "tr"
     assert "test" in actions[0].plain_language_explanation.lower()
 
+
+@pytest.mark.asyncio
+async def test_mcp_tool_call_read_file(proxy_env):
+    proxy, store, _ = proxy_env
+    with tempfile.NamedTemporaryFile("w+", delete=False) as tf:
+        tf.write("Secret data: AKIAIOSFODNN7EXAMPLE and config value")
+        tf_path = tf.name
+
+    try:
+        req = {
+            "jsonrpc": "2.0",
+            "id": 10,
+            "method": "tools/call",
+            "params": {
+                "name": "read_file",
+                "arguments": {"file_path": tf_path},
+            },
+        }
+        resp = await proxy.handle_mcp_request(req, session_id="read-sess")
+        assert "result" in resp
+        content = resp["result"]["content"][0]["text"]
+        # Verify content was read and DLP redacted
+        assert "config value" in content
+        assert "[REDACTED_AWS_KEY]" in content
+        assert "AKIAIOSFODNN7EXAMPLE" not in content
+    finally:
+        if os.path.exists(tf_path):
+            os.remove(tf_path)
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_call_bash_cwd(proxy_env):
+    proxy, store, _ = proxy_env
+    with tempfile.TemporaryDirectory() as td:
+        req = {
+            "jsonrpc": "2.0",
+            "id": 11,
+            "method": "tools/call",
+            "params": {
+                "name": "bash",
+                "arguments": {
+                    "command": "pwd",
+                    "cwd": td,
+                },
+            },
+        }
+        resp = await proxy.handle_mcp_request(req, session_id="cwd-sess")
+        assert "result" in resp
+        out = resp["result"]["content"][0]["text"]
+        assert os.path.realpath(td) in os.path.realpath(out)
+
+

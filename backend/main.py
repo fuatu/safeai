@@ -119,6 +119,24 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
 
 app = create_app()
 
-if __name__ == "__main__":
+def run_server(host: str = "0.0.0.0", port: int = 8080, reload: bool = True):
+    import socket
     import uvicorn
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=8080, reload=True)
+
+    try:
+        # Bind dual-stack socket (IPv6 + IPv4) so 'localhost' resolves reliably
+        # on both macOS and Linux regardless of whether client connects via ::1 or 127.0.0.1
+        sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("::", port))
+        sock.listen(256)
+        config = uvicorn.Config(app="backend.main:app", reload=reload)
+        server = uvicorn.Server(config)
+        server.run(sockets=[sock])
+    except Exception:
+        uvicorn.run("backend.main:app", host=host, port=port, reload=reload)
+
+
+if __name__ == "__main__":
+    run_server()
